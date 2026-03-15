@@ -30,7 +30,7 @@ A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/c
 ### Automatic
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/romacv/claude--plan-usage-statusline/main/statusline.rb -o ~/.claude/statusline.rb && \
+curl -fsSL https://raw.githubusercontent.com/romacv/claude-plan-usage-statusline/main/statusline.rb -o ~/.claude/statusline.rb && \
   ruby -e '
     require "json"
     f = File.expand_path("~/.claude/settings.json")
