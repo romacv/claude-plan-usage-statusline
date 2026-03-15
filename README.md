@@ -2,9 +2,9 @@
 
 A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that displays model, usage limits, git state, and workspace context in your terminal's status bar.
 
-**Real rate limit data.** Most statusline tools estimate usage by counting tokens from local transcript files. This script calls Anthropic's OAuth API (`/api/oauth/usage`) and reads the server-side `five_hour` and `seven_day` utilization percentages directly -- the same numbers the rate limiter uses.
+**Real rate limit data.** Other tools count tokens locally from transcript files. This script reads server-side `five_hour` and `seven_day` utilization from Anthropic's OAuth API -- the actual numbers the rate limiter tracks.
 
-**No permission prompts of any kind.** The script is a plain Ruby command, not a sandboxed app, so macOS never shows permission dialogs for it. Keychain access is delegated to `/usr/bin/security` (a system-signed Apple binary) -- macOS only prompts when an app calls Security framework APIs directly, which this script never does. Outbound network calls from command-line scripts don't trigger the macOS firewall dialog (only GUI apps do). File writes go to `/tmp`, which requires no special access. Nothing to approve, ever.
+**No permission prompts.** It's a plain CLI script, not a sandboxed app. Keychain is read by delegating to `/usr/bin/security` -- an Apple-signed system binary that already has Keychain access. The script itself never touches the Security APIs, so macOS has no reason to prompt. Outbound network from CLI doesn't trigger the firewall dialog either.
 
 ## Screenshot
 
