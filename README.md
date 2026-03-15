@@ -4,10 +4,7 @@ A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/c
 
 ## Screenshot
 
-```
-◆ Opus 4.6 · ▤ Ctx: 72% · ▮ 5h: 85% 3h42m · ▮ 1w: 91%
-~ /Users/you/project · ⌥ main · ⎋ feature/auth ∙2 !1 ↑1
-```
+![Screenshot](screenshot.svg)
 
 ## Features
 

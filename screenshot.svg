@@ -1,0 +1,5 @@
+<svg width="640" height="70" viewBox="0 0 640 70" xmlns="http://www.w3.org/2000/svg">
+  <rect width="640" height="70" rx="6" fill="#1e1e1e"/>
+  <text x="16" y="29" font-family="'JetBrains Mono','Cascadia Code','Fira Code','SF Mono',monospace" font-size="13" fill="#cccccc"><tspan fill="#5f5fff">&#x25C6; Opus 4.6</tspan><tspan fill="#555555"> &#xB7; </tspan><tspan fill="#875fff">&#x25A4; Ctx: 72%</tspan><tspan fill="#555555"> &#xB7; </tspan><tspan fill="#8787ff">&#x25AE; 5h: 85%</tspan><tspan fill="#ffd700"> 3h42m</tspan><tspan fill="#555555"> &#xB7; </tspan><tspan fill="#8787ff">&#x25AE; 1w: 91%</tspan></text>
+  <text x="16" y="53" font-family="'JetBrains Mono','Cascadia Code','Fira Code','SF Mono',monospace" font-size="13" fill="#cccccc"><tspan fill="#00ffff">~ /Users/you/project</tspan><tspan fill="#555555"> &#xB7; </tspan><tspan fill="#cccccc">&#x2325; main</tspan><tspan fill="#555555"> &#xB7; </tspan><tspan fill="#ffd75f">&#x238B; feature/auth &#x2219;2 !1 &#x2191;1</tspan></text>
+</svg>
