@@ -4,7 +4,7 @@ A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/c
 
 **Real rate limit data.** Most statusline tools estimate usage by counting tokens from local transcript files. This script calls Anthropic's OAuth API (`/api/oauth/usage`) and reads the server-side `five_hour` and `seven_day` utilization percentages directly -- the same numbers the rate limiter uses.
 
-**No Keychain prompts.** Token is read via the macOS `security` CLI, not the Security framework APIs. macOS only prompts when an app calls those APIs directly; here the read is delegated to `/usr/bin/security` (a system-signed Apple binary), so no dialog ever appears.
+**No permission prompts of any kind.** The script is a plain Ruby command, not a sandboxed app, so macOS never shows permission dialogs for it. Keychain access is delegated to `/usr/bin/security` (a system-signed Apple binary) -- macOS only prompts when an app calls Security framework APIs directly, which this script never does. Outbound network calls from command-line scripts don't trigger the macOS firewall dialog (only GUI apps do). File writes go to `/tmp`, which requires no special access. Nothing to approve, ever.
 
 ## Screenshot
 
