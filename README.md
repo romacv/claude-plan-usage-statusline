@@ -72,6 +72,10 @@ Example with multiple settings:
 }
 ```
 
+## Keychain Access -- No Prompts
+
+The script reads the OAuth token via the macOS `security` CLI (`security find-generic-password -s "..." -w`), not through the Security framework APIs directly. macOS only shows a Keychain access dialog when an app calls those APIs and isn't in the entry's ACL. Here the actual Keychain read is performed by `/usr/bin/security` -- a system-signed Apple binary -- so macOS never prompts. The script never touches your Keychain itself; it only reads the output of a system tool. No credentials are stored or logged anywhere.
+
 ## How It Works
 
 1. **Token retrieval** -- reads the OAuth access token from macOS Keychain via `security find-generic-password`
