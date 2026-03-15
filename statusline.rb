@@ -1,0 +1,357 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# MIT License
+#
+# Copyright (c) 2025 Claude Code Statusline Contributors
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Claude Code Status Line
+#
+# Displays model, usage, git, and workspace info in Claude Code's status bar.
+# Usage data is fetched from Anthropic's OAuth API and cached locally.
+#
+# Environment Variables:
+#   CLAUDE_STATUS_DISPLAY_MODE     - Display style: minimal, colors (default), or background
+#   CLAUDE_STATUS_INFO_MODE        - Info display: none (default), emoji, or text
+#   CLAUDE_STATUS_CACHE_FILE       - Cache file path (default: /tmp/claude_usage_cache.json)
+#   CLAUDE_STATUS_CACHE_TTL        - Cache TTL in seconds (default: 60)
+#   CLAUDE_STATUS_KEYCHAIN_SERVICE - Keychain service name (default: "Claude Code-credentials")
+#
+# Usage:
+#   echo '{"workspace":{"current_dir":"/tmp"},"model":{"display_name":"Sonnet 4.6"},"context_window":{"remaining_percentage":80}}' | ruby ~/.claude/statusline.rb
+#
+# Installation (settings.json):
+#   "statusLine": {
+#     "type": "command",
+#     "command": "CLAUDE_STATUS_DISPLAY_MODE=minimal ruby ~/.claude/statusline.rb",
+#     "padding": 0
+#   }
+
+require 'json'
+require 'net/http'
+require 'uri'
+require 'time'
+
+class ClaudeStatusLine
+  # Configuration
+  DEFAULT_DISPLAY_MODE = :colors
+  DEFAULT_INFO_MODE = :none
+
+  CACHE_FILE = ENV['CLAUDE_STATUS_CACHE_FILE'] || '/tmp/claude_usage_cache.json'
+  CACHE_TTL = (ENV['CLAUDE_STATUS_CACHE_TTL'] || 60).to_i
+  KEYCHAIN_SERVICE = ENV['CLAUDE_STATUS_KEYCHAIN_SERVICE'] || 'Claude Code-credentials'
+
+  # Emoji mappings for info mode
+  EMOJIS = {
+    directory: "\u{1F4C1}",
+    git: "\u{1F500}",
+    model: "\u{1F9BE}",
+    tokens: "\u{1F4D3}",
+    messages: "\u{270F}\u{FE0F}",
+    time: "\u{23F1}\u{FE0F}"
+  }.freeze
+
+  # Color schemes
+  COLOR_SCHEMES = {
+    colors: {
+      directory: "\033[38;5;51m",    # Soft sky blue
+      model: "\033[38;5;105m",        # Soft pink/magenta
+      tokens: "\033[38;5;141m",       # Soft cyan
+      messages: "\033[38;5;147m",     # Soft green
+      time: "\033[38;5;220m",         # Soft yellow
+      git_clean: "\033[38;5;154m",    # Soft green
+      git_dirty: "\033[38;5;222m",    # Soft peach/orange
+      gray: "\033[90m",
+      reset: "\033[0m"
+    },
+    minimal: {
+      directory: "\033[38;5;110m",
+      model: "\033[38;5;133m",
+      tokens: "\033[38;5;66m",
+      messages: "\033[38;5;107m",
+      time: "\033[38;5;178m",
+      worktree: "\033[38;5;180m",
+      git_clean: "\033[38;5;96m",
+      git_dirty: "\033[38;5;167m",
+      gray: "\033[90m",
+      reset: "\033[0m"
+    },
+    background: {
+      directory: "\033[44m\033[37m",     # Blue bg, white text
+      model: "\033[45m\033[37m",         # Magenta bg, white text
+      tokens: "\033[46m\033[30m",        # Cyan bg, black text
+      messages: "\033[42m\033[30m",      # Green bg, black text
+      time: "\033[43m\033[30m",          # Yellow bg, black text
+      git_clean: "\033[42m\033[37m",           # Bold green
+      git_dirty: "\033[43m\033[37m",           # Bold yellow
+      gray: "\033[90m",
+      reset: "\033[0m"
+    }
+  }.freeze
+
+  def initialize
+    @input_data = JSON.parse($stdin.read)
+    @current_dir = @input_data.dig('workspace', 'current_dir') || @input_data['cwd']
+    @model_name = @input_data.dig('model', 'display_name')
+    @dir_name = File.basename(@current_dir) if @current_dir
+    @display_mode = (ENV['CLAUDE_STATUS_DISPLAY_MODE']&.to_sym || DEFAULT_DISPLAY_MODE)
+    @info_mode = (ENV['CLAUDE_STATUS_INFO_MODE']&.to_sym || DEFAULT_INFO_MODE)
+    @colors = COLOR_SCHEMES[@display_mode] || COLOR_SCHEMES[DEFAULT_DISPLAY_MODE]
+    @ctx_remaining = @input_data.dig('context_window', 'remaining_percentage') || 100
+  end
+
+  def generate
+    sep = "#{@colors[:gray]}\u{00B7}#{@colors[:reset]}"
+    usage = calculate_usage
+    git = git_data
+
+    line1_parts = [
+      colorize("\u{25C6} #{@model_name}", :model),
+      colorize("\u{25A4} #{usage[:context]}", :tokens),
+      "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize(usage[:reset_time], :time)}",
+      colorize("\u{25AE} #{usage[:weekly]}", :messages)
+    ]
+    line1 = line1_parts.join(" #{sep} ")
+
+    line2_parts = [
+      colorize("~ #{@current_dir}", :directory),
+      colorize("\u{2325} #{git[:worktree]}", :worktree),
+      colorize("\u{238B} #{git[:branch]}#{git[:indicators]}", git[:color])
+    ]
+    line2 = line2_parts.join(" #{sep} ")
+
+    "#{line1}\n#{line2}"
+  end
+
+  private
+
+  def join_parts(parts)
+    if @display_mode == :background
+      parts.join(' ')
+    else
+      separator = "#{@colors[:gray]}\u{00B7}#{@colors[:reset]}"
+      parts.join(" #{separator} ")
+    end
+  end
+
+  def colorize(text, color)
+    return '' unless text
+    "#{@colors[color]}#{text}#{@colors[:reset]}"
+  end
+
+  def format_with_info(text, type)
+    return colorize(text, type) unless text
+
+    case @info_mode
+    when :emoji
+      emoji = EMOJIS[type]
+      if @display_mode == :background
+        colorize("#{emoji}#{text} ", type)
+      else
+        colorize("#{emoji} #{text} ", type)
+      end
+    when :text
+      suffix = get_text_suffix(type)
+      colorize("#{text}#{suffix}", type)
+    else
+      colorize(text, type)
+    end
+  end
+
+  def format_with_info_and_padding(text, type)
+    return colorize(" #{text} ", type) unless text
+
+    case @info_mode
+    when :emoji
+      emoji = EMOJIS[type]
+      colorize("#{emoji} #{text} ", type)
+    when :text
+      suffix = get_text_suffix(type)
+      colorize(" #{text}#{suffix} ", type)
+    else
+      colorize(" #{text} ", type)
+    end
+  end
+
+  def get_text_suffix(type)
+    case type
+    when :tokens
+      " tokens"
+    when :messages
+      " messages"
+    when :time
+      " before reset"
+    else
+      ""
+    end
+  end
+
+  def git_data
+    default = { worktree: 'main', branch: '', indicators: '', color: :git_clean }
+    return default unless @current_dir && File.exist?(File.join(@current_dir, '.git'))
+
+    Dir.chdir(@current_dir) do
+      branch = `git rev-parse --abbrev-ref HEAD 2>/dev/null`.strip
+      return default if branch.empty?
+
+      git_dir = `git rev-parse --git-dir 2>/dev/null`.strip
+      common_dir = `git rev-parse --git-common-dir 2>/dev/null`.strip
+      worktree = if git_dir != common_dir
+        File.basename(`git rev-parse --show-toplevel 2>/dev/null`.strip)
+      else
+        'main'
+      end
+
+      indicators = build_git_indicators
+      color = indicators.empty? ? :git_clean : :git_dirty
+
+      { worktree: worktree, branch: branch, indicators: indicators, color: color }
+    end
+  rescue
+    default
+  end
+
+  def build_git_indicators
+    status = `git status --porcelain 2>/dev/null`.strip
+    branch = `git rev-parse --abbrev-ref HEAD 2>/dev/null`.strip
+    ahead_behind = `git rev-list --left-right --count origin/#{branch}...#{branch} 2>/dev/null`.strip
+
+    parts = []
+    parts << '?' if status.match?(/^\?\?/)
+    staged_count = status.lines.count { |l| l.match?(/^[AM]/) }
+    parts << "\u{2219}#{staged_count}" if staged_count > 0
+    modified_count = status.lines.count { |l| l.match?(/^.[MD]/) }
+    parts << "!#{modified_count}" if modified_count > 0
+
+    if ahead_behind.match(/^(\d+)\s+(\d+)$/)
+      behind, ahead = ahead_behind.split.map(&:to_i)
+      parts << "\u{2191}#{ahead}" if ahead > 0
+      parts << "\u{2193}#{behind}" if behind > 0
+    end
+
+    parts.empty? ? '' : ' ' + parts.join(' ')
+  end
+
+  def fetch_oauth_token
+    json_str = `security find-generic-password -s "#{KEYCHAIN_SERVICE}" -w 2>/dev/null`.strip
+    return nil if json_str.empty?
+
+    data = JSON.parse(json_str)
+    data.dig('claudeAiOauth', 'accessToken')
+  rescue StandardError
+    nil
+  end
+
+  def fetch_api_usage(token)
+    uri = URI('https://api.anthropic.com/api/oauth/usage')
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    http.open_timeout = 5
+    http.read_timeout = 5
+
+    request = Net::HTTP::Get.new(uri)
+    request['Authorization'] = "Bearer #{token}"
+    request['anthropic-beta'] = 'oauth-2025-04-20'
+
+    response = http.request(request)
+    return nil unless response.is_a?(Net::HTTPSuccess)
+
+    JSON.parse(response.body)
+  rescue StandardError
+    nil
+  end
+
+  def read_cached_usage
+    return nil unless File.exist?(CACHE_FILE)
+    return nil if (Time.now - File.mtime(CACHE_FILE)) > CACHE_TTL
+
+    JSON.parse(File.read(CACHE_FILE))
+  rescue StandardError
+    nil
+  end
+
+  def write_cache(data)
+    File.write(CACHE_FILE, JSON.generate(data))
+  rescue StandardError
+    nil
+  end
+
+  def calculate_usage
+    cached = read_cached_usage
+    return parse_api_data(cached) if cached
+
+    token = fetch_oauth_token
+    if token
+      api_data = fetch_api_usage(token)
+      if api_data
+        write_cache(api_data)
+        return parse_api_data(api_data)
+      end
+    end
+
+    default_usage
+  end
+
+  def parse_api_data(data)
+    standard = data['five_hour'] || data['standardRateLimit'] || data['standard'] || {}
+    weekly = data['seven_day'] || data['weeklyRateLimit'] || data['weekly'] || {}
+
+    session_util = (standard['utilizationPercentage'] || standard['utilization_percentage'] || standard['utilization'] || 0).to_f
+    weekly_util = (weekly['utilizationPercentage'] || weekly['utilization_percentage'] || weekly['utilization'] || 0).to_f
+    resets_at_str = standard['resetsAt'] || standard['resets_at']
+
+    session_remaining = [100 - session_util.round, 0].max
+    weekly_remaining = [100 - weekly_util.round, 0].max
+
+    {
+      context: "Ctx: #{@ctx_remaining.round}%",
+      session: "5h: #{session_remaining}%",
+      reset_time: format_reset_time(resets_at_str),
+      weekly: "1w: #{weekly_remaining}%"
+    }
+  rescue StandardError
+    default_usage
+  end
+
+  def format_reset_time(resets_at_str)
+    return "-" unless resets_at_str
+
+    resets_at = Time.parse(resets_at_str)
+    seconds_until_reset = [(resets_at - Time.now).to_i, 0].max
+    hours = seconds_until_reset / 3600
+    minutes = (seconds_until_reset % 3600) / 60
+    "#{hours}h#{minutes}m"
+  rescue StandardError
+    "-"
+  end
+
+  def default_usage
+    {
+      context: "Ctx: #{@ctx_remaining.round}%",
+      session: "5h: ?",
+      reset_time: "-",
+      weekly: "1w: ?"
+    }
+  end
+end
+
+# Execute
+puts ClaudeStatusLine.new.generate
