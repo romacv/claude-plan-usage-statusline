@@ -51,6 +51,14 @@ Or manually: copy `statusline.rb` to `~/.claude/statusline.rb` and add to `~/.cl
 | `CLAUDE_STATUS_CACHE_TTL` | `60` | Cache lifetime in seconds |
 | `CLAUDE_STATUS_KEYCHAIN_SERVICE` | `Claude Code-credentials` | Keychain service name |
 
+## How It Works
+
+1. Reads OAuth token from macOS Keychain via `security find-generic-password`
+2. Calls `https://api.anthropic.com/api/oauth/usage` with the token
+3. Caches the response locally; skips the API call if cache is fresh
+4. Collects git state via `git status` / `git rev-parse` / `git rev-list`
+5. Outputs a two-line status bar with model, context, usage, reset timer, and git info
+
 ## License
 
 MIT
