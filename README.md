@@ -27,6 +27,22 @@ A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/c
 
 ## Installation
 
+### Automatic
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/romacv/claude--plan-usage-statusline/main/statusline.rb -o ~/.claude/statusline.rb && \
+  ruby -e '
+    require "json"
+    f = File.expand_path("~/.claude/settings.json")
+    s = File.exist?(f) ? JSON.parse(File.read(f)) : {}
+    s["statusLine"] = {"type"=>"command","command"=>"CLAUDE_STATUS_DISPLAY_MODE=minimal ruby ~/.claude/statusline.rb","padding"=>0}
+    File.write(f, JSON.pretty_generate(s))
+    puts "Done. Restart Claude Code to apply."
+  '
+```
+
+### Manual
+
 1. Copy `statusline.rb` to `~/.claude/statusline.rb`
 
 2. Add to your `~/.claude/settings.json`:
