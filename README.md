@@ -1,8 +1,10 @@
 # Claude Code Plan Usage Statusline
 
-A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that displays model, usage limits, git state, and workspace context -- all in your terminal's status bar.
+A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that displays model, usage limits, git state, and workspace context in your terminal's status bar.
 
-**Real rate limit data.** Most statusline tools estimate usage by counting tokens from local transcript files -- they show what *you* sent, not what Anthropic's servers see. This script calls the actual OAuth usage API (`/api/oauth/usage`) and reads the server-side `five_hour` and `seven_day` utilization percentages directly. No guessing, no local math -- the same numbers the rate limiter uses.
+**Real rate limit data.** Most statusline tools estimate usage by counting tokens from local transcript files. This script calls Anthropic's OAuth API (`/api/oauth/usage`) and reads the server-side `five_hour` and `seven_day` utilization percentages directly -- the same numbers the rate limiter uses.
+
+**No Keychain prompts.** Token is read via the macOS `security` CLI, not the Security framework APIs. macOS only prompts when an app calls those APIs directly; here the read is delegated to `/usr/bin/security` (a system-signed Apple binary), so no dialog ever appears.
 
 ## Screenshot
 
@@ -10,33 +12,24 @@ A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/c
 
 ## Features
 
-- **OAuth API usage** -- fetches 5-hour and weekly rate limit data from Anthropic's API
-- **Local caching** -- avoids repeated API calls with configurable TTL (default: 60s)
-- **macOS Keychain integration** -- reads OAuth tokens securely, no hardcoded credentials
-- **Git indicators** -- branch, worktree, staged/modified counts, ahead/behind tracking
+- **OAuth API usage** -- real 5-hour and weekly rate limit data from Anthropic's servers
+- **Local caching** -- configurable TTL (default: 60s) to avoid repeated API calls
+- **Git indicators** -- branch, worktree, staged/modified counts, ahead/behind
 - **Color schemes** -- `minimal`, `colors`, and `background` display modes
-- **Info modes** -- `none`, `emoji`, or `text` label styles
-- **Context window** -- shows remaining context percentage from Claude Code's input
+- **Context window** -- remaining context percentage from Claude Code's input
 
 ## Requirements
 
 - Ruby (system Ruby on macOS works fine)
-- macOS (uses `security` CLI for Keychain access)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with OAuth authentication
+- macOS with Claude Code authenticated (`claude` run at least once)
 
 ## Installation
-
-### Automatic
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/romacv/claude-plan-usage-statusline/main/install.sh | sh
 ```
 
-### Manual
-
-1. Copy `statusline.rb` to `~/.claude/statusline.rb`
-
-2. Add to your `~/.claude/settings.json`:
+Or manually: copy `statusline.rb` to `~/.claude/statusline.rb` and add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -50,39 +43,13 @@ curl -fsSL https://raw.githubusercontent.com/romacv/claude-plan-usage-statusline
 
 ## Configuration
 
-All configuration is done via environment variables in the `command` string:
-
 | Variable | Default | Description |
 |---|---|---|
-| `CLAUDE_STATUS_DISPLAY_MODE` | `colors` | Color scheme: `minimal`, `colors`, or `background` |
-| `CLAUDE_STATUS_INFO_MODE` | `none` | Label style: `none`, `emoji`, or `text` |
-| `CLAUDE_STATUS_CACHE_FILE` | `/tmp/claude_usage_cache.json` | Path to the usage cache file |
+| `CLAUDE_STATUS_DISPLAY_MODE` | `colors` | `minimal`, `colors`, or `background` |
+| `CLAUDE_STATUS_INFO_MODE` | `none` | `none`, `emoji`, or `text` |
+| `CLAUDE_STATUS_CACHE_FILE` | `/tmp/claude_usage_cache.json` | Cache file path |
 | `CLAUDE_STATUS_CACHE_TTL` | `60` | Cache lifetime in seconds |
-| `CLAUDE_STATUS_KEYCHAIN_SERVICE` | `Claude Code-credentials` | macOS Keychain service name for OAuth token |
-
-Example with multiple settings:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "CLAUDE_STATUS_DISPLAY_MODE=colors CLAUDE_STATUS_INFO_MODE=emoji CLAUDE_STATUS_CACHE_TTL=120 ruby ~/.claude/statusline.rb",
-    "padding": 0
-  }
-}
-```
-
-## Keychain Access -- No Prompts
-
-The script reads the OAuth token via the macOS `security` CLI (`security find-generic-password -s "..." -w`), not through the Security framework APIs directly. macOS only shows a Keychain access dialog when an app calls those APIs and isn't in the entry's ACL. Here the actual Keychain read is performed by `/usr/bin/security` -- a system-signed Apple binary -- so macOS never prompts. The script never touches your Keychain itself; it only reads the output of a system tool. No credentials are stored or logged anywhere.
-
-## How It Works
-
-1. **Token retrieval** -- reads the OAuth access token from macOS Keychain via `security find-generic-password`
-2. **API call** -- fetches usage data from `https://api.anthropic.com/api/oauth/usage` with the OAuth token
-3. **Caching** -- writes API response to a local JSON file; subsequent calls within TTL skip the API
-4. **Git data** -- runs `git status`, `git rev-parse`, and `git rev-list` to gather branch/worktree info
-5. **Formatting** -- combines model name, context window, usage percentages, reset timer, and git state into a two-line status bar
+| `CLAUDE_STATUS_KEYCHAIN_SERVICE` | `Claude Code-credentials` | Keychain service name |
 
 ## License
 
