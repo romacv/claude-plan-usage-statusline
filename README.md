@@ -2,6 +2,10 @@
 
 A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that displays model, usage limits, git state, and workspace context -- all in your terminal's status bar.
 
+**Real rate limit data.** Most statusline tools estimate usage by counting tokens from local transcript files -- they show what *you* sent, not what Anthropic's servers see. This script calls the actual OAuth usage API (`/api/oauth/usage`) and reads the server-side `five_hour` and `seven_day` utilization percentages directly. No guessing, no local math -- the same numbers the rate limiter uses.
+
+**Zero dependencies.** Single Ruby file, system Ruby, no npm, no Node.js, no package manager.
+
 ## Screenshot
 
 ![Screenshot](screenshot.svg)
