@@ -10,7 +10,7 @@
 #   CLAUDE_STATUS_DISPLAY_MODE     - Display style: minimal, colors (default), or background
 #   CLAUDE_STATUS_INFO_MODE        - Info display: none (default), emoji, or text
 #   CLAUDE_STATUS_CACHE_FILE       - Cache file path (default: /tmp/claude_usage_cache.json)
-#   CLAUDE_STATUS_CACHE_TTL        - Cache TTL in seconds (default: 60)
+#   CLAUDE_STATUS_CACHE_TTL        - Cache TTL in seconds (default: 300)
 #   CLAUDE_STATUS_KEYCHAIN_SERVICE - Keychain service name (default: "Claude Code-credentials")
 #
 # Usage:
@@ -34,7 +34,7 @@ class ClaudeStatusLine
   DEFAULT_INFO_MODE = :none
 
   CACHE_FILE = ENV['CLAUDE_STATUS_CACHE_FILE'] || '/tmp/claude_usage_cache.json'
-  CACHE_TTL = (ENV['CLAUDE_STATUS_CACHE_TTL'] || 60).to_i
+  CACHE_TTL = (ENV['CLAUDE_STATUS_CACHE_TTL'] || 300).to_i
   KEYCHAIN_SERVICE = ENV['CLAUDE_STATUS_KEYCHAIN_SERVICE'] || 'Claude Code-credentials'
 
   # Emoji mappings for info mode
@@ -250,6 +250,7 @@ class ClaudeStatusLine
     request['anthropic-beta'] = 'oauth-2025-04-20'
 
     response = http.request(request)
+    return { 'rate_limited' => true } if response.code == '429'
     return nil unless response.is_a?(Net::HTTPSuccess)
 
     JSON.parse(response.body)
@@ -274,13 +275,17 @@ class ClaudeStatusLine
 
   def calculate_usage
     cached = read_cached_usage
-    return parse_api_data(cached) if cached
+    if cached
+      return default_usage if cached['rate_limited']
+      return parse_api_data(cached)
+    end
 
     token = fetch_oauth_token
     if token
       api_data = fetch_api_usage(token)
       if api_data
         write_cache(api_data)
+        return default_usage if api_data['rate_limited']
         return parse_api_data(api_data)
       end
     end
