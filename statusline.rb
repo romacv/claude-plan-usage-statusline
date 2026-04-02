@@ -30,6 +30,7 @@ class ClaudeStatusLine
     directory: "\033[38;5;110m",
     model: "\033[38;5;133m",
     tokens: "\033[38;5;66m",
+    plan: "\033[38;5;73m",
     messages: "\033[38;5;107m",
     time: "\033[38;5;178m",
     worktree: "\033[38;5;180m",
@@ -52,13 +53,15 @@ class ClaudeStatusLine
     sep = "#{@colors[:gray]}\u{00B7}#{@colors[:reset]}"
     usage = calculate_usage
     git = git_data
+    plan = fetch_subscription_type
 
     line1_parts = [
       colorize("\u{25C6} #{@model_name}", :model),
       colorize("\u{25A4} #{usage[:context]}", :tokens),
+      (colorize(plan, :plan) if plan),
       "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize("\u{29D6} #{usage[:reset_time]}", :time)}",
       "#{colorize("\u{25AE} #{usage[:weekly]}", :messages)} #{colorize("\u{29D6} #{usage[:weekly_reset_time]}", :time)}"
-    ]
+    ].compact
     line1 = line1_parts.join(" #{sep} ")
 
     line2_parts = [
@@ -124,14 +127,29 @@ class ClaudeStatusLine
     parts.empty? ? '' : ' ' + parts.join(' ')
   end
 
-  def fetch_oauth_token
+  def read_keychain
+    return @keychain_data if defined?(@keychain_data)
     json_str = `security find-generic-password -s "#{KEYCHAIN_SERVICE}" -w 2>/dev/null`.strip
-    return nil if json_str.empty?
-
-    data = JSON.parse(json_str)
-    data.dig('claudeAiOauth', 'accessToken')
+    @keychain_data = json_str.empty? ? {} : JSON.parse(json_str)
   rescue StandardError
-    nil
+    @keychain_data = {}
+  end
+
+  def fetch_oauth_token
+    read_keychain.dig('claudeAiOauth', 'accessToken')
+  end
+
+  def fetch_subscription_type
+    type = read_keychain.dig('claudeAiOauth', 'subscriptionType')
+    return nil unless type
+    case type.downcase
+    when 'free'    then 'Free'
+    when 'pro'     then 'Pro'
+    when 'max'     then 'Max'
+    when 'max_5x'  then 'Max 5x'
+    when 'max_20x' then 'Max 20x'
+    else type.capitalize
+    end
   end
 
   def fetch_api_usage(token)
