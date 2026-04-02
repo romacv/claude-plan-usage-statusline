@@ -17,7 +17,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 - **5h usage** -- session utilization with countdown to reset
 - **1w usage** -- weekly utilization with reset date
 - **Git** -- branch, worktree (when in a git worktree), staged/modified counts, ahead/behind
-- **Caching** -- 5-minute local cache, no repeated API calls
+- **Live refresh** -- cache updated automatically after each agent response via Claude Code `Stop` hook, with 30-second debounce
 
 ## Requirements
 
@@ -49,6 +49,7 @@ Or manually: copy `statusline.rb` to `~/.claude/statusline.rb` and add to `~/.cl
 3. Caches the response locally; skips the API call if cache is fresh
 4. Collects git state via `git status` / `git rev-parse` / `git rev-list`
 5. Outputs a two-line status bar with model, context, usage, reset timer, and git info
+6. A `Stop` hook runs `refresh-usage-cache.sh` asynchronously after each agent response, keeping the cache fresh without blocking Claude Code. Debounced to at most one API call per 30 seconds.
 
 ## Menu Bar
 
