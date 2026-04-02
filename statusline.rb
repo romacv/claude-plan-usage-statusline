@@ -206,7 +206,7 @@ class ClaudeStatusLine
       session: "5h: #{session_remaining}%",
       reset_time: format_reset_time(resets_at_str),
       weekly: "1w: #{weekly_remaining}%",
-      weekly_reset_time: format_reset_time(weekly_resets_at_str)
+      weekly_reset_time: format_weekly_reset_time(weekly_resets_at_str)
     }
   rescue StandardError
     default_usage
@@ -220,6 +220,15 @@ class ClaudeStatusLine
     hours = seconds_until_reset / 3600
     minutes = (seconds_until_reset % 3600) / 60
     "#{hours}h#{minutes}m"
+  rescue StandardError
+    "-"
+  end
+
+  def format_weekly_reset_time(resets_at_str)
+    return "-" unless resets_at_str
+
+    resets_at = Time.parse(resets_at_str).localtime
+    resets_at.strftime("%b %-d %H:%M")
   rescue StandardError
     "-"
   end
