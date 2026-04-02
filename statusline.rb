@@ -50,7 +50,7 @@ class ClaudeStatusLine
   end
 
   def generate
-    sep = "#{@colors[:gray]}\u{00B7}#{@colors[:reset]}"
+    sep = "#{@colors[:gray]}|#{@colors[:reset]}"
     usage = calculate_usage
     git = git_data
     plan = fetch_subscription_type
