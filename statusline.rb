@@ -69,7 +69,7 @@ class ClaudeStatusLine
       (colorize("\u{2442} #{git[:worktree]}", :worktree) if git[:worktree]),
       colorize("\u{2325} #{git[:branch]}#{git[:indicators]}", git[:color])
     ].compact
-    line2 = line2_parts.join(" #{sep} ")
+    line2 = "#{line2_parts.join(" #{sep} ")} #{sep}"
 
     "#{line1}\n#{line2}"
   end
