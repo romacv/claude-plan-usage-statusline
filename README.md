@@ -50,6 +50,12 @@ Or manually: copy `statusline.rb` to `~/.claude/statusline.rb` and add to `~/.cl
 4. Collects git state via `git status` / `git rev-parse` / `git rev-list`
 5. Outputs a two-line status bar with model, context, usage, reset timer, and git info
 
+## Menu Bar
+
+For a native menu bar experience, check out [Usage Battery for Claude Code](https://apps.apple.com/us/app/usage-battery-for-cluade-code/id6757597561?mt=12) on the Mac App Store.
+
+<!-- screenshot -->
+
 ## License
 
 MIT
