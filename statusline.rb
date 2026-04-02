@@ -57,8 +57,8 @@ class ClaudeStatusLine
 
     line1_parts = [
       colorize("\u{25C6} #{@model_name}", :model),
+      (colorize("\u{2726} #{plan}", :plan) if plan),
       colorize("\u{25A4} #{usage[:context]}", :tokens),
-      (colorize(plan, :plan) if plan),
       "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize("\u{29D6} #{usage[:reset_time]}", :time)}",
       "#{colorize("\u{25AE} #{usage[:weekly]}", :messages)} #{colorize("\u{29D6} #{usage[:weekly_reset_time]}", :time)}"
     ].compact
