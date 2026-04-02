@@ -62,7 +62,7 @@ class ClaudeStatusLine
       "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize("\u{29D6} #{usage[:reset_time]}", :time)}",
       "#{colorize("\u{25AE} #{usage[:weekly]}", :messages)} #{colorize("\u{29D6} #{usage[:weekly_reset_time]}", :time)}"
     ].compact
-    line1 = line1_parts.join(" #{sep} ")
+    line1 = "#{line1_parts.join(" #{sep} ")} #{sep}"
 
     line2_parts = [
       colorize("~ #{@current_dir}", :directory),
