@@ -23,7 +23,7 @@ require 'time'
 
 class ClaudeStatusLine
   CACHE_FILE = '/tmp/claude_usage_cache.json'
-  CACHE_TTL = 300
+  CACHE_TTL = 600
   KEYCHAIN_SERVICE = 'Claude Code-credentials'
 
   COLORS = {
