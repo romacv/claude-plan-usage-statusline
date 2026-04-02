@@ -29,10 +29,11 @@ settings["hooks"]["Stop"] = [
     "matcher" => "",
     "hooks" => [
       {
-        "type"    => "command",
-        "command" => "bash $HOME/.claude/refresh-usage-cache.sh",
-        "async"   => true,
-        "timeout" => 15000
+        "type"          => "command",
+        "command"       => "bash $HOME/.claude/refresh-usage-cache.sh",
+        "async"         => true,
+        "timeout"       => 15000,
+        "statusMessage" => ""
       }
     ]
   }
