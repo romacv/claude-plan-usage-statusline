@@ -36,11 +36,8 @@ unless already_installed
     "matcher" => "",
     "hooks" => [
       {
-        "type"          => "command",
-        "command"       => our_command,
-        "async"         => true,
-        "timeout"       => 15000,
-        "statusMessage" => ""
+        "type"    => "command",
+        "command" => "bash -c 'nohup bash $HOME/.claude/refresh-usage-cache.sh >/dev/null 2>&1 &'"
       }
     ]
   }

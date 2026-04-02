@@ -42,6 +42,14 @@ Or manually: copy `statusline.rb` to `~/.claude/statusline.rb` and add to `~/.cl
 }
 ```
 
+## Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/romacv/claude-plan-usage-statusline/main/uninstall.sh | sh
+```
+
+Removes `statusline.rb`, `refresh-usage-cache.sh`, cache files, and the `statusLine` + `Stop` hook entries from `settings.json`.
+
 ## How It Works
 
 1. Reads OAuth token from macOS Keychain via `security find-generic-password`
