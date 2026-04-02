@@ -12,10 +12,12 @@ A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/c
 
 ## Features
 
-- **OAuth API usage** -- real 5-hour and weekly rate limit data from Anthropic's servers
-- **Local caching** -- 5-minute cache to avoid repeated API calls
-- **Git indicators** -- branch, worktree, staged/modified counts, ahead/behind
-- **Context window** -- remaining context percentage from Claude Code's input
+- **Model** -- current model name
+- **Context window** -- remaining % from Claude Code's input
+- **5h usage** -- session utilization with countdown to reset
+- **1w usage** -- weekly utilization with reset date
+- **Git** -- branch, worktree (when in a git worktree), staged/modified counts, ahead/behind
+- **Caching** -- 5-minute local cache, no repeated API calls
 
 ## Requirements
 
