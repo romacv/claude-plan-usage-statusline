@@ -44,7 +44,7 @@ class ClaudeStatusLine
     model: "\u{1F9BE}",
     tokens: "\u{1F4D3}",
     messages: "\u{270F}\u{FE0F}",
-    time: "\u{23F1}\u{FE0F}"
+    time: "\u{1F55A}"
   }.freeze
 
   # Color schemes
@@ -104,16 +104,16 @@ class ClaudeStatusLine
     line1_parts = [
       colorize("\u{25C6} #{@model_name}", :model),
       colorize("\u{25A4} #{usage[:context]}", :tokens),
-      "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize(usage[:reset_time], :time)}",
+      "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize("#{@info_mode == :emoji ? "\u{1F55A}" : "\u{25F7}"} #{usage[:reset_time]}", :time)}",
       colorize("\u{25AE} #{usage[:weekly]}", :messages)
     ]
     line1 = line1_parts.join(" #{sep} ")
 
     line2_parts = [
       colorize("~ #{@current_dir}", :directory),
-      colorize("\u{2325} #{git[:worktree]}", :worktree),
-      colorize("\u{238B} #{git[:branch]}#{git[:indicators]}", git[:color])
-    ]
+      (colorize("\u{2442} #{git[:worktree]}", :worktree) if git[:worktree]),
+      colorize("\u{2325} #{git[:branch]}#{git[:indicators]}", git[:color])
+    ].compact
     line2 = line2_parts.join(" #{sep} ")
 
     "#{line1}\n#{line2}"
@@ -183,7 +183,7 @@ class ClaudeStatusLine
   end
 
   def git_data
-    default = { worktree: 'main', branch: '', indicators: '', color: :git_clean }
+    default = { worktree: nil, branch: '', indicators: '', color: :git_clean }
     return default unless @current_dir && File.exist?(File.join(@current_dir, '.git'))
 
     Dir.chdir(@current_dir) do
@@ -195,7 +195,7 @@ class ClaudeStatusLine
       worktree = if git_dir != common_dir
         File.basename(`git rev-parse --show-toplevel 2>/dev/null`.strip)
       else
-        'main'
+        nil
       end
 
       indicators = build_git_indicators
