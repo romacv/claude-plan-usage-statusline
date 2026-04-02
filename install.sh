@@ -17,7 +17,7 @@ settings_path = File.expand_path("~/.claude/settings.json")
 settings = File.exist?(settings_path) ? JSON.parse(File.read(settings_path)) : {}
 settings["statusLine"] = {
   "type"    => "command",
-  "command" => "CLAUDE_STATUS_DISPLAY_MODE=minimal ruby ~/.claude/statusline.rb",
+  "command" => "ruby ~/.claude/statusline.rb",
   "padding" => 0
 }
 File.write(settings_path, JSON.pretty_generate(settings))

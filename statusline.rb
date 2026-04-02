@@ -6,20 +6,13 @@
 # Displays model, usage, git, and workspace info in Claude Code's status bar.
 # Usage data is fetched from Anthropic's OAuth API and cached locally.
 #
-# Environment Variables:
-#   CLAUDE_STATUS_DISPLAY_MODE     - Display style: minimal, colors (default), or background
-#   CLAUDE_STATUS_INFO_MODE        - Info display: none (default), emoji, or text
-#   CLAUDE_STATUS_CACHE_FILE       - Cache file path (default: /tmp/claude_usage_cache.json)
-#   CLAUDE_STATUS_CACHE_TTL        - Cache TTL in seconds (default: 300)
-#   CLAUDE_STATUS_KEYCHAIN_SERVICE - Keychain service name (default: "Claude Code-credentials")
-#
 # Usage:
 #   echo '{"workspace":{"current_dir":"/tmp"},"model":{"display_name":"Sonnet 4.6"},"context_window":{"remaining_percentage":80}}' | ruby ~/.claude/statusline.rb
 #
 # Installation (settings.json):
 #   "statusLine": {
 #     "type": "command",
-#     "command": "CLAUDE_STATUS_DISPLAY_MODE=minimal ruby ~/.claude/statusline.rb",
+#     "command": "ruby ~/.claude/statusline.rb",
 #     "padding": 0
 #   }
 
@@ -29,60 +22,21 @@ require 'uri'
 require 'time'
 
 class ClaudeStatusLine
-  # Configuration
-  DEFAULT_DISPLAY_MODE = :colors
-  DEFAULT_INFO_MODE = :none
+  CACHE_FILE = '/tmp/claude_usage_cache.json'
+  CACHE_TTL = 300
+  KEYCHAIN_SERVICE = 'Claude Code-credentials'
 
-  CACHE_FILE = ENV['CLAUDE_STATUS_CACHE_FILE'] || '/tmp/claude_usage_cache.json'
-  CACHE_TTL = (ENV['CLAUDE_STATUS_CACHE_TTL'] || 300).to_i
-  KEYCHAIN_SERVICE = ENV['CLAUDE_STATUS_KEYCHAIN_SERVICE'] || 'Claude Code-credentials'
-
-  # Emoji mappings for info mode
-  EMOJIS = {
-    directory: "\u{1F4C1}",
-    git: "\u{1F500}",
-    model: "\u{1F9BE}",
-    tokens: "\u{1F4D3}",
-    messages: "\u{270F}\u{FE0F}",
-    time: "\u{1F55A}"
-  }.freeze
-
-  # Color schemes
-  COLOR_SCHEMES = {
-    colors: {
-      directory: "\033[38;5;51m",    # Soft sky blue
-      model: "\033[38;5;105m",        # Soft pink/magenta
-      tokens: "\033[38;5;141m",       # Soft cyan
-      messages: "\033[38;5;147m",     # Soft green
-      time: "\033[38;5;220m",         # Soft yellow
-      git_clean: "\033[38;5;154m",    # Soft green
-      git_dirty: "\033[38;5;222m",    # Soft peach/orange
-      gray: "\033[90m",
-      reset: "\033[0m"
-    },
-    minimal: {
-      directory: "\033[38;5;110m",
-      model: "\033[38;5;133m",
-      tokens: "\033[38;5;66m",
-      messages: "\033[38;5;107m",
-      time: "\033[38;5;178m",
-      worktree: "\033[38;5;180m",
-      git_clean: "\033[38;5;96m",
-      git_dirty: "\033[38;5;167m",
-      gray: "\033[90m",
-      reset: "\033[0m"
-    },
-    background: {
-      directory: "\033[44m\033[37m",     # Blue bg, white text
-      model: "\033[45m\033[37m",         # Magenta bg, white text
-      tokens: "\033[46m\033[30m",        # Cyan bg, black text
-      messages: "\033[42m\033[30m",      # Green bg, black text
-      time: "\033[43m\033[30m",          # Yellow bg, black text
-      git_clean: "\033[42m\033[37m",           # Bold green
-      git_dirty: "\033[43m\033[37m",           # Bold yellow
-      gray: "\033[90m",
-      reset: "\033[0m"
-    }
+  COLORS = {
+    directory: "\033[38;5;110m",
+    model: "\033[38;5;133m",
+    tokens: "\033[38;5;66m",
+    messages: "\033[38;5;107m",
+    time: "\033[38;5;178m",
+    worktree: "\033[38;5;180m",
+    git_clean: "\033[38;5;96m",
+    git_dirty: "\033[38;5;167m",
+    gray: "\033[90m",
+    reset: "\033[0m"
   }.freeze
 
   def initialize
@@ -90,9 +44,7 @@ class ClaudeStatusLine
     @current_dir = @input_data.dig('workspace', 'current_dir') || @input_data['cwd']
     @model_name = @input_data.dig('model', 'display_name')
     @dir_name = File.basename(@current_dir) if @current_dir
-    @display_mode = (ENV['CLAUDE_STATUS_DISPLAY_MODE']&.to_sym || DEFAULT_DISPLAY_MODE)
-    @info_mode = (ENV['CLAUDE_STATUS_INFO_MODE']&.to_sym || DEFAULT_INFO_MODE)
-    @colors = COLOR_SCHEMES[@display_mode] || COLOR_SCHEMES[DEFAULT_DISPLAY_MODE]
+    @colors = COLORS
     @ctx_remaining = @input_data.dig('context_window', 'remaining_percentage') || 100
   end
 
@@ -104,7 +56,7 @@ class ClaudeStatusLine
     line1_parts = [
       colorize("\u{25C6} #{@model_name}", :model),
       colorize("\u{25A4} #{usage[:context]}", :tokens),
-      "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize("#{@info_mode == :emoji ? "\u{1F55A}" : "\u{25F7}"} #{usage[:reset_time]}", :time)}",
+      "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize("\u{29D6} #{usage[:reset_time]}", :time)}",
       colorize("\u{25AE} #{usage[:weekly]}", :messages)
     ]
     line1 = line1_parts.join(" #{sep} ")
@@ -121,65 +73,9 @@ class ClaudeStatusLine
 
   private
 
-  def join_parts(parts)
-    if @display_mode == :background
-      parts.join(' ')
-    else
-      separator = "#{@colors[:gray]}\u{00B7}#{@colors[:reset]}"
-      parts.join(" #{separator} ")
-    end
-  end
-
   def colorize(text, color)
     return '' unless text
     "#{@colors[color]}#{text}#{@colors[:reset]}"
-  end
-
-  def format_with_info(text, type)
-    return colorize(text, type) unless text
-
-    case @info_mode
-    when :emoji
-      emoji = EMOJIS[type]
-      if @display_mode == :background
-        colorize("#{emoji}#{text} ", type)
-      else
-        colorize("#{emoji} #{text} ", type)
-      end
-    when :text
-      suffix = get_text_suffix(type)
-      colorize("#{text}#{suffix}", type)
-    else
-      colorize(text, type)
-    end
-  end
-
-  def format_with_info_and_padding(text, type)
-    return colorize(" #{text} ", type) unless text
-
-    case @info_mode
-    when :emoji
-      emoji = EMOJIS[type]
-      colorize("#{emoji} #{text} ", type)
-    when :text
-      suffix = get_text_suffix(type)
-      colorize(" #{text}#{suffix} ", type)
-    else
-      colorize(" #{text} ", type)
-    end
-  end
-
-  def get_text_suffix(type)
-    case type
-    when :tokens
-      " tokens"
-    when :messages
-      " messages"
-    when :time
-      " before reset"
-    else
-      ""
-    end
   end
 
   def git_data

@@ -13,9 +13,8 @@ A Ruby status line script for [Claude Code](https://docs.anthropic.com/en/docs/c
 ## Features
 
 - **OAuth API usage** -- real 5-hour and weekly rate limit data from Anthropic's servers
-- **Local caching** -- configurable TTL (default: 60s) to avoid repeated API calls
+- **Local caching** -- 5-minute cache to avoid repeated API calls
 - **Git indicators** -- branch, worktree, staged/modified counts, ahead/behind
-- **Color schemes** -- `minimal`, `colors`, and `background` display modes
 - **Context window** -- remaining context percentage from Claude Code's input
 
 ## Requirements
@@ -35,21 +34,11 @@ Or manually: copy `statusline.rb` to `~/.claude/statusline.rb` and add to `~/.cl
 {
   "statusLine": {
     "type": "command",
-    "command": "CLAUDE_STATUS_DISPLAY_MODE=minimal ruby ~/.claude/statusline.rb",
+    "command": "ruby ~/.claude/statusline.rb",
     "padding": 0
   }
 }
 ```
-
-## Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `CLAUDE_STATUS_DISPLAY_MODE` | `colors` | `minimal`, `colors`, or `background` |
-| `CLAUDE_STATUS_INFO_MODE` | `none` | `none`, `emoji`, or `text` |
-| `CLAUDE_STATUS_CACHE_FILE` | `/tmp/claude_usage_cache.json` | Cache file path |
-| `CLAUDE_STATUS_CACHE_TTL` | `60` | Cache lifetime in seconds |
-| `CLAUDE_STATUS_KEYCHAIN_SERVICE` | `Claude Code-credentials` | Keychain service name |
 
 ## How It Works
 
