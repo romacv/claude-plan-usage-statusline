@@ -57,7 +57,7 @@ class ClaudeStatusLine
       colorize("\u{25C6} #{@model_name}", :model),
       colorize("\u{25A4} #{usage[:context]}", :tokens),
       "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize("\u{29D6} #{usage[:reset_time]}", :time)}",
-      colorize("\u{25AE} #{usage[:weekly]}", :messages)
+      "#{colorize("\u{25AE} #{usage[:weekly]}", :messages)} #{colorize("\u{29D6} #{usage[:weekly_reset_time]}", :time)}"
     ]
     line1 = line1_parts.join(" #{sep} ")
 
@@ -196,6 +196,7 @@ class ClaudeStatusLine
     session_util = (standard['utilizationPercentage'] || standard['utilization_percentage'] || standard['utilization'] || 0).to_f
     weekly_util = (weekly['utilizationPercentage'] || weekly['utilization_percentage'] || weekly['utilization'] || 0).to_f
     resets_at_str = standard['resetsAt'] || standard['resets_at']
+    weekly_resets_at_str = weekly['resetsAt'] || weekly['resets_at']
 
     session_remaining = [100 - session_util.round, 0].max
     weekly_remaining = [100 - weekly_util.round, 0].max
@@ -204,7 +205,8 @@ class ClaudeStatusLine
       context: "Ctx: #{@ctx_remaining.round}%",
       session: "5h: #{session_remaining}%",
       reset_time: format_reset_time(resets_at_str),
-      weekly: "1w: #{weekly_remaining}%"
+      weekly: "1w: #{weekly_remaining}%",
+      weekly_reset_time: format_reset_time(weekly_resets_at_str)
     }
   rescue StandardError
     default_usage
@@ -227,7 +229,8 @@ class ClaudeStatusLine
       context: "Ctx: #{@ctx_remaining.round}%",
       session: "5h: ?",
       reset_time: "-",
-      weekly: "1w: ?"
+      weekly: "1w: ?",
+      weekly_reset_time: "-"
     }
   end
 end
