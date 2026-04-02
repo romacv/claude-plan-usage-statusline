@@ -24,20 +24,27 @@ settings["statusLine"] = {
 }
 
 settings["hooks"] ||= {}
-settings["hooks"]["Stop"] = [
-  {
+settings["hooks"]["Stop"] ||= []
+
+our_command = "bash $HOME/.claude/refresh-usage-cache.sh"
+already_installed = settings["hooks"]["Stop"].any? do |entry|
+  (entry["hooks"] || []).any? { |h| h["command"] == our_command }
+end
+
+unless already_installed
+  settings["hooks"]["Stop"] << {
     "matcher" => "",
     "hooks" => [
       {
         "type"          => "command",
-        "command"       => "bash $HOME/.claude/refresh-usage-cache.sh",
+        "command"       => our_command,
         "async"         => true,
         "timeout"       => 15000,
         "statusMessage" => ""
       }
     ]
   }
-]
+end
 
 File.write(settings_path, JSON.pretty_generate(settings))
 RUBY
