@@ -64,6 +64,7 @@ Removes `statusline.rb`, `refresh-usage-cache.sh`, cache files, and the `statusL
 For a native menu bar experience, check out [Usage Battery for Claude Code](https://apps.apple.com/us/app/usage-battery-for-cluade-code/id6757597561?mt=12) on the Mac App Store.
 
 <img width="993" height="613" alt="Screenshot 2026-04-02 at 12 04 40" src="https://github.com/user-attachments/assets/339bfd04-c186-4477-a488-650f50ef3c8b" />
+
 ## License
 
 MIT
