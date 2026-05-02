@@ -13,6 +13,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 ## Features
 
 - **Model** -- current model name
+- **Effort** -- current effort level (when set via `/effort`)
 - **Context window** -- remaining % from Claude Code's input
 - **5h usage** -- session utilization with countdown to reset
 - **1w usage** -- weekly utilization with reset date

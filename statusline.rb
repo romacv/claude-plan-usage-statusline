@@ -47,27 +47,28 @@ class ClaudeStatusLine
     @dir_name = File.basename(@current_dir) if @current_dir
     @colors = COLORS
     @ctx_remaining = @input_data.dig('context_window', 'remaining_percentage') || 100
+    @effort_level = @input_data.dig('effort', 'level')
   end
 
   def generate
     sep = "#{@colors[:gray]}|#{@colors[:reset]}"
     usage = calculate_usage
     git = git_data
-    plan = fetch_subscription_type
+    effort = @effort_level ? "Eff:#{@effort_level}" : nil
 
     line1_parts = [
-      colorize("\u{25C6} #{@model_name}", :model),
-      (colorize("\u{2726} #{plan}", :plan) if plan),
-      colorize("\u{25A4} #{usage[:context]}", :tokens),
-      "#{colorize("\u{25AE} #{usage[:session]}", :messages)} #{colorize("\u{29D6} #{usage[:reset_time]}", :time)}",
-      "#{colorize("\u{25AE} #{usage[:weekly]}", :messages)} #{colorize("\u{29D6} #{usage[:weekly_reset_time]}", :time)}"
+      colorize("\u{25C6}#{@model_name}", :model),
+      (colorize("\u{2726}#{effort}", :plan) if effort),
+      colorize("\u{25A4}#{usage[:context]}", :tokens),
+      "#{colorize("\u{25AE}#{usage[:session]}", :messages)} #{colorize("\u{29D6}#{usage[:reset_time]}", :time)}",
+      "#{colorize("\u{25AE}#{usage[:weekly]}", :messages)} #{colorize("\u{29D6}#{usage[:weekly_reset_time]}", :time)}"
     ].compact
     line1 = "#{line1_parts.join(" #{sep} ")} #{sep}"
 
     line2_parts = [
-      colorize("~ #{@current_dir}", :directory),
-      (colorize("\u{2442} #{git[:worktree]}", :worktree) if git[:worktree]),
-      colorize("\u{2325} #{git[:branch]}#{git[:indicators]}", git[:color])
+      colorize(short_path, :directory),
+      (colorize("\u{2442}#{git[:worktree]}", :worktree) if git[:worktree]),
+      colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color])
     ].compact
     line2 = "#{line2_parts.join(" #{sep} ")} #{sep}"
 
@@ -79,6 +80,11 @@ class ClaudeStatusLine
   def colorize(text, color)
     return '' unless text
     "#{@colors[color]}#{text}#{@colors[:reset]}"
+  end
+
+  def short_path
+    return '' unless @current_dir
+    @current_dir.sub(/\A#{Regexp.escape(Dir.home)}(?=\/|\z)/, '~')
   end
 
   def git_data
@@ -137,19 +143,6 @@ class ClaudeStatusLine
 
   def fetch_oauth_token
     read_keychain.dig('claudeAiOauth', 'accessToken')
-  end
-
-  def fetch_subscription_type
-    type = read_keychain.dig('claudeAiOauth', 'subscriptionType')
-    return nil unless type
-    case type.downcase
-    when 'free'    then 'Free'
-    when 'pro'     then 'Pro'
-    when 'max'     then 'Max'
-    when 'max_5x'  then 'Max 5x'
-    when 'max_20x' then 'Max 20x'
-    else type.capitalize
-    end
   end
 
   def fetch_api_usage(token)
@@ -220,10 +213,10 @@ class ClaudeStatusLine
     weekly_remaining = [100 - weekly_util.round, 0].max
 
     {
-      context: "Ctx: #{@ctx_remaining.round}%",
-      session: "5h: #{session_remaining}%",
+      context: "Ctx:#{@ctx_remaining.round}%",
+      session: "5h:#{session_remaining}%",
       reset_time: format_reset_time(resets_at_str),
-      weekly: "1w: #{weekly_remaining}%",
+      weekly: "1w:#{weekly_remaining}%",
       weekly_reset_time: format_weekly_reset_time(weekly_resets_at_str)
     }
   rescue StandardError
@@ -253,10 +246,10 @@ class ClaudeStatusLine
 
   def default_usage
     {
-      context: "Ctx: #{@ctx_remaining.round}%",
-      session: "5h: ?",
+      context: "Ctx:#{@ctx_remaining.round}%",
+      session: "5h:?",
       reset_time: "-",
-      weekly: "1w: ?",
+      weekly: "1w:?",
       weekly_reset_time: "-"
     }
   end
