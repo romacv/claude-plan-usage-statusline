@@ -34,6 +34,8 @@ class ClaudeStatusLine
     directory: "\033[38;5;110m",
     model: "\033[38;5;133m",
     tokens: "\033[38;5;66m",
+    ctx_warn: "\033[38;5;214m",
+    ctx_alert: "\033[38;5;196m",
     plan: "\033[38;5;73m",
     messages: "\033[38;5;107m",
     time: "\033[38;5;178m",
@@ -63,7 +65,7 @@ class ClaudeStatusLine
     line1_parts = [
       colorize("\u{25C6}#{@model_name}", :model),
       (colorize("\u{2726}#{effort}", :plan) if effort),
-      colorize("\u{25A4}#{usage[:context]}", :tokens),
+      context_segment(usage[:context]),
       "#{colorize("\u{25AE}#{usage[:session]}", :messages)} #{colorize("\u{29D6}#{usage[:reset_time]}", :time)}",
       "#{colorize("\u{25AE}#{usage[:weekly]}", :messages)} #{colorize("\u{29D6}#{usage[:weekly_reset_time]}", :time)}"
     ].compact
@@ -84,6 +86,17 @@ class ClaudeStatusLine
   def colorize(text, color)
     return '' unless text
     "#{@colors[color]}#{text}#{@colors[:reset]}"
+  end
+
+  def context_segment(text)
+    rem = @ctx_remaining
+    if rem <= 20
+      "#{colorize("\u{25A4}#{text}", :ctx_alert)}#{colorize(" \u{26A0}COMPACT", :ctx_alert)}"
+    elsif rem <= 35
+      colorize("\u{25A4}#{text}", :ctx_warn)
+    else
+      colorize("\u{25A4}#{text}", :tokens)
+    end
   end
 
   def short_path
