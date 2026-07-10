@@ -43,6 +43,17 @@ Or manually: copy `statusline.rb` to `~/.claude/statusline.rb` and add to `~/.cl
 }
 ```
 
+## AI Agent Configuration Files
+
+Settings and configurations for AI agents are stored in the following paths. Since these files are located inside hidden dotfile directories, you must always look deep inside them (and navigate via aliases/symlinks if needed) to manage and configure the agents:
+
+| AI Agent | Settings File Path |
+| :--- | :--- |
+| **Claude Code** | `~/.claude/settings.json` |
+| **Google Antigravity (`agy`)** | `~/.gemini/antigravity-cli/settings.json` |
+
+
+
 ## Uninstall
 
 ```bash
