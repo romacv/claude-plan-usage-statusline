@@ -192,7 +192,8 @@ class ClaudeStatusLine
     return nil unless File.exist?(CACHE_FILE)
     return nil if (Time.now - File.mtime(CACHE_FILE)) > CACHE_TTL
 
-    JSON.parse(File.read(CACHE_FILE))
+    data = JSON.parse(File.read(CACHE_FILE))
+    data.is_a?(Hash) ? data : nil
   rescue StandardError
     nil
   end
