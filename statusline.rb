@@ -24,6 +24,8 @@ require 'time'
 class ClaudeStatusLine
   CACHE_FILE = '/tmp/claude_usage_cache.json'
   CACHE_TTL = 600
+  LOOP_DIR = File.join(Dir.home, '.claude', 'loops')
+  LOOP_GOAL_MAX = 22
   KEYCHAIN_SERVICE = 'Claude Code-credentials'
   MIDDLE_TRUNCATE_THRESHOLD = 23
   MIDDLE_TRUNCATE_HEAD = 11
@@ -42,6 +44,7 @@ class ClaudeStatusLine
     worktree: "\033[38;5;180m",
     git_clean: "\033[38;5;96m",
     git_dirty: "\033[38;5;167m",
+    loop: "\033[38;5;114m",
     gray: "\033[90m",
     reset: "\033[0m"
   }.freeze
@@ -49,11 +52,12 @@ class ClaudeStatusLine
   def initialize
     @input_data = JSON.parse($stdin.read)
     @current_dir = @input_data.dig('workspace', 'current_dir') || @input_data['cwd']
-    @model_name = @input_data.dig('model', 'display_name')
+    @model_name = @input_data.dig('model', 'display_name')&.sub(/\s*\(1M context\)/, "\u{00B7}1M")
     @dir_name = File.basename(@current_dir) if @current_dir
     @colors = COLORS
     @ctx_remaining = @input_data.dig('context_window', 'remaining_percentage') || 100
     @effort_level = @input_data.dig('effort', 'level')
+    @session_id = @input_data['session_id'] || @input_data['sessionId']
   end
 
   def generate
@@ -66,17 +70,18 @@ class ClaudeStatusLine
       colorize("\u{25C6}#{@model_name}", :model),
       (colorize("\u{2726}#{effort}", :plan) if effort),
       context_segment(usage[:context]),
-      "#{colorize("\u{25AE}#{usage[:session]}", :messages)} #{colorize("\u{29D6}#{usage[:reset_time]}", :time)}",
-      "#{colorize("\u{25AE}#{usage[:weekly]}", :messages)} #{colorize("\u{29D6}#{usage[:weekly_reset_time]}", :time)}"
+      usage_segment(usage[:session], usage[:session_pct], usage[:reset_time]),
+      usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time])
     ].compact
-    line1 = "#{line1_parts.join(" #{sep} ")} #{sep}"
+    line1 = line1_parts.join(" #{sep} ")
 
     line2_parts = [
       colorize(short_path, :directory),
       (colorize("\u{2442}#{git[:worktree]}", :worktree) if git[:worktree]),
-      colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color])
+      colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color]),
+      loop_segment
     ].compact
-    line2 = "#{line2_parts.join(" #{sep} ")} #{sep}"
+    line2 = line2_parts.join(" #{sep} ")
 
     "#{line1}\n#{line2}"
   end
@@ -102,6 +107,30 @@ class ClaudeStatusLine
   def short_path
     return '' unless @current_dir
     middle_truncate(@current_dir.sub(/\A#{Regexp.escape(Dir.home)}(?=\/|\z)/, '~'))
+  end
+
+  def loop_data
+    return nil unless @session_id
+    path = File.join(LOOP_DIR, "#{@session_id}.json")
+    return nil unless File.exist?(path)
+
+    data = JSON.parse(File.read(path))
+    data.is_a?(Hash) && data['active'] ? data : nil
+  rescue StandardError
+    nil
+  end
+
+  def loop_segment
+    data = loop_data
+    return colorize("\u{27F3}loop:off", :gray) unless data
+
+    interval = data['interval'].to_s
+    goal = data['goal'].to_s.gsub(/\s+/, ' ').strip
+    goal = "#{goal[0, LOOP_GOAL_MAX]}\u{2026}" if goal.length > LOOP_GOAL_MAX + 1
+    parts = []
+    parts << "loop:#{interval}" unless interval.empty?
+    parts << "goal:#{goal}" unless goal.empty?
+    colorize("\u{27F3}#{parts.join(' ')}", :loop)
   end
 
   def git_data
@@ -239,12 +268,30 @@ class ClaudeStatusLine
     {
       context: "Ctx:#{@ctx_remaining.round}%",
       session: "5h:#{session_remaining}%",
+      session_pct: session_remaining,
       reset_time: format_reset_time(resets_at_str),
       weekly: "1w:#{weekly_remaining}%",
+      weekly_pct: weekly_remaining,
       weekly_reset_time: format_weekly_reset_time(weekly_resets_at_str)
     }
   rescue StandardError
     default_usage
+  end
+
+  def usage_color(remaining)
+    return :gray if remaining.nil?
+    return :ctx_alert if remaining <= 15
+    return :ctx_warn if remaining <= 35
+
+    :messages
+  end
+
+  def usage_segment(text, remaining, reset)
+    if reset.nil? || reset == '-'
+      colorize("\u{25AE}#{text.sub(/:.*/, ':?')}", :gray)
+    else
+      "#{colorize("\u{25AE}#{text}", usage_color(remaining))} #{colorize("\u{29D6}#{reset}", :time)}"
+    end
   end
 
   def format_reset_time(resets_at_str)
@@ -272,8 +319,10 @@ class ClaudeStatusLine
     {
       context: "Ctx:#{@ctx_remaining.round}%",
       session: "5h:?",
+      session_pct: nil,
       reset_time: "-",
       weekly: "1w:?",
+      weekly_pct: nil,
       weekly_reset_time: "-"
     }
   end

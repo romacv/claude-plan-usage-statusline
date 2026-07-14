@@ -12,13 +12,29 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 
 ## Features
 
-- **Model** -- current model name
+- **Model** -- current model name (long-context suffix compacted, e.g. `(1M context)` becomes `·1M`)
 - **Effort** -- current effort level (when set via `/effort`)
-- **Context window** -- remaining % from Claude Code's input
-- **5h usage** -- session utilization with countdown to reset
-- **1w usage** -- weekly utilization with reset date
+- **Context window** -- remaining % from Claude Code's input, color-graded
+- **5h usage** -- session headroom with countdown to reset, color-graded (amber at 35% left, red at 15% left); shows `?` when usage data is unavailable instead of a misleading 100%
+- **1w usage** -- weekly headroom with reset date, color-graded
+- **Loop status** -- shows an active recurring loop and its goal when a session loop-state file is present (see [Loop Status](#loop-status))
 - **Git** -- branch, worktree (when in a git worktree), staged/modified counts, ahead/behind
 - **Live refresh** -- cache updated automatically after each agent response via Claude Code `Stop` hook, with 30-second debounce
+
+## Loop Status
+
+The status bar shows whether a recurring loop is active for the current session and its goal:
+
+- `⟳loop:15m goal:…` -- an active loop, interval and goal (goal truncated to fit)
+- `⟳loop:off` -- no active loop
+
+The segment reads a per-session state file at `~/.claude/loops/<session_id>.json`, keyed by the `session_id` Claude Code passes to the status line. Write it when a loop starts, remove it when the loop stops:
+
+```json
+{"active": true, "interval": "15m", "goal": "your goal here", "job_id": "abc123"}
+```
+
+Keying by session id means each session shows only its own loop, and a leftover file from a closed session is inert -- its id never recurs. When no matching file is present, the segment shows `⟳loop:off`.
 
 ## Requirements
 
@@ -68,7 +84,7 @@ Removes `statusline.rb`, `refresh-usage-cache.sh`, cache files, and the `statusL
 2. Calls `https://api.anthropic.com/api/oauth/usage` with the token
 3. Caches the response locally; skips the API call if cache is fresh
 4. Collects git state via `git status` / `git rev-parse` / `git rev-list`
-5. Outputs a two-line status bar with model, context, usage, reset timer, and git info
+5. Outputs a two-line status bar with model, context, usage, reset timer, git info, and loop status
 6. A `Stop` hook runs `refresh-usage-cache.sh` asynchronously after each agent response, keeping the cache fresh without blocking Claude Code. Debounced to at most one API call per 30 seconds.
 
 ## Menu Bar
