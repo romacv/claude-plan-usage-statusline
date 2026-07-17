@@ -28,5 +28,11 @@ RESPONSE=$(curl -s --max-time 10 \
   "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
 [ -z "$RESPONSE" ] && exit 0
 
-printf '%s' "$RESPONSE" | ruby -rjson -e 'JSON.parse(STDIN.read)' 2>/dev/null || exit 0
-printf '%s' "$RESPONSE" > "$CACHE_FILE"
+# Only refresh when the payload is a usable usage reading. An error body
+# (e.g. rate_limit_error) is valid JSON but must not clobber good cache.
+printf '%s' "$RESPONSE" | ruby -rjson -e '
+resp = STDIN.read
+data = (JSON.parse(resp) rescue nil)
+exit 1 if data.nil? || data["error"] || !data["five_hour"]
+File.write(ARGV[0], resp)
+' "$CACHE_FILE" 2>/dev/null || exit 0
