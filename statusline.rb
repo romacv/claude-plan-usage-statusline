@@ -95,6 +95,13 @@ class ClaudeStatusLine
     "#{@colors[color]}#{text}#{@colors[:reset]}"
   end
 
+  # Strip C0 control bytes (incl. ESC 0x1b) and DEL from any file-sourced string
+  # before it reaches the terminal, so a crafted marker/loop file can't inject
+  # its own escape sequences. Apply to the DATA, never to colorized output.
+  def sanitize(text)
+    text.to_s.gsub(/[\u0000-\u001f\u007f]/, '')
+  end
+
   def context_segment(text)
     rem = @ctx_remaining
     if rem <= 20
@@ -127,7 +134,7 @@ class ClaudeStatusLine
     return colorize("\u{27F3}loop:off", :gray) unless data
 
     interval = data['interval'].to_s
-    goal = data['goal'].to_s.gsub(/\s+/, ' ').strip
+    goal = sanitize(data['goal']).gsub(/\s+/, ' ').strip
     goal = "#{goal[0, LOOP_GOAL_MAX]}\u{2026}" if goal.length > LOOP_GOAL_MAX + 1
     parts = []
     parts << "loop:#{interval}" unless interval.empty?
@@ -160,10 +167,10 @@ class ClaudeStatusLine
   def pause_source(data)
     by = data['by']
     by = by.join(', ') if by.is_a?(Array)
-    by = by.to_s.strip
+    by = sanitize(by).strip
     return by unless by.empty?
 
-    window = data['window'].to_s
+    window = sanitize(data['window']).strip
     window = '5h' if window.empty?
     "#{window} limit"
   end
