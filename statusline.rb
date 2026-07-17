@@ -72,8 +72,7 @@ class ClaudeStatusLine
       (colorize("\u{2726}#{effort}", :plan) if effort),
       context_segment(usage[:context]),
       usage_segment(usage[:session], usage[:session_pct], usage[:reset_time]),
-      usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time]),
-      standdown_segment
+      usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time])
     ].compact
     line1 = line1_parts.join(" #{sep} ")
 
@@ -81,7 +80,8 @@ class ClaudeStatusLine
       colorize(short_path, :directory),
       (colorize("\u{2442}#{git[:worktree]}", :worktree) if git[:worktree]),
       colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color]),
-      loop_segment
+      loop_segment,
+      pause_segment
     ].compact
     line2 = line2_parts.join(" #{sep} ")
 
@@ -144,19 +144,35 @@ class ClaudeStatusLine
     nil
   end
 
-  def standdown_segment
+  def pause_segment
     data = standdown_data
     return nil unless data
 
+    by = pause_source(data)
     clock = format_wake_clock(data['wake_at_epoch'])
-    label = colorize("\u{23F8}pause", :ctx_alert)
-    clock ? "#{label} #{colorize("resume #{clock}", :time)}" : label
+    text = "\u{23F8}paused by #{by}"
+    text += ", resume #{clock}" if clock
+    colorize(text, :ctx_alert)
+  end
+
+  # Generic cause label. Any scheduler may set `by` (string or list) on the
+  # marker; usage-guard sets "<window> limit". Falls back to the window field.
+  def pause_source(data)
+    by = data['by']
+    by = by.join(', ') if by.is_a?(Array)
+    by = by.to_s.strip
+    return by unless by.empty?
+
+    window = data['window'].to_s
+    window = '5h' if window.empty?
+    "#{window} limit"
   end
 
   def format_wake_clock(epoch)
     return nil unless epoch
 
-    Time.at(epoch.to_i).strftime('%H:%M')
+    t = Time.at(epoch.to_i).localtime
+    t.strftime('%Y%m%d') == Time.now.strftime('%Y%m%d') ? t.strftime('%H:%M') : t.strftime('%b %-d %H:%M')
   end
 
   def git_data

@@ -40,9 +40,9 @@ Keying by session id means each session shows only its own loop, and a leftover 
 
 When the companion [usage-guard](https://github.com/romacv/claude-usage-guard) has paused the session (headroom below its threshold, waiting for the limit to reset), the status bar adds a pause segment:
 
-- `⏸pause resume 20:01` -- paused, with the local clock time work will resume
+- `⏸paused by 5h limit, resume 20:01` -- the cause and the local clock time work will resume (date added when it's not today)
 
-The segment reads usage-guard's marker at `~/.claude/usage-guard/standdown.json` and only appears while a breach is active -- if usage-guard isn't installed, the file is absent and nothing shows. It shares the usage cache this status line already maintains, so no extra API calls.
+It sits next to the loop segment on the second line. The source (`by …`) is generic: usage-guard sets `5h limit`, but any scheduler that writes the marker's `by` field (a string or a list) shows there. The segment reads usage-guard's marker at `~/.claude/usage-guard/standdown.json` and only appears while a breach is active -- if usage-guard isn't installed, the file is absent and nothing shows. It shares the usage cache this status line already maintains, so no extra API calls.
 
 ## Requirements
 
