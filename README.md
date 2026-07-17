@@ -42,7 +42,7 @@ When the companion [usage-guard](https://github.com/romacv/claude-usage-guard) h
 
 - `⏸paused by 5h limit, resume 20:01` -- the cause and the local clock time work will resume (date added when it's not today)
 
-It sits next to the loop segment on the second line. The source (`by …`) is generic: usage-guard sets `5h limit`, but any scheduler that writes the marker's `by` field (a string or a list) shows there. The segment reads usage-guard's marker at `~/.claude/usage-guard/standdown.json` and only appears while a breach is active -- if usage-guard isn't installed, the file is absent and nothing shows. It shares the usage cache this status line already maintains, so no extra API calls.
+It sits next to the loop segment on the second line. The source (`by …`) is generic: usage-guard sets `5h limit`, but any scheduler that writes the marker's `by` field (a string or a list) shows there. The segment reads usage-guard's session-scoped marker at `~/.claude/usage-guard/standdown-<session_id>.json` and only appears while a breach is active -- if usage-guard isn't installed, the file is absent and nothing shows. It shares the usage cache this status line already maintains, so no extra API calls.
 
 ## Requirements
 
