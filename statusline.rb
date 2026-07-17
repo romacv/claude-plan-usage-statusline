@@ -26,7 +26,7 @@ class ClaudeStatusLine
   CACHE_TTL = 600
   LOOP_DIR = File.join(Dir.home, '.claude', 'loops')
   LOOP_GOAL_MAX = 22
-  STANDDOWN_FILE = File.join(Dir.home, '.claude', 'usage-guard', 'standdown.json')
+  USAGE_GUARD_DIR = File.join(Dir.home, '.claude', 'usage-guard')
   KEYCHAIN_SERVICE = 'Claude Code-credentials'
   MIDDLE_TRUNCATE_THRESHOLD = 23
   MIDDLE_TRUNCATE_HEAD = 11
@@ -143,9 +143,15 @@ class ClaudeStatusLine
   end
 
   def standdown_data
-    return nil unless File.exist?(STANDDOWN_FILE)
+    return nil unless @session_id
 
-    data = JSON.parse(File.read(STANDDOWN_FILE))
+    sid = @session_id.to_s.gsub(/[^A-Za-z0-9_-]/, '')
+    return nil if sid.empty?
+
+    path = File.join(USAGE_GUARD_DIR, "standdown-#{sid}.json")
+    return nil unless File.exist?(path)
+
+    data = JSON.parse(File.read(path))
     data.is_a?(Hash) && data['breach'] ? data : nil
   rescue StandardError
     nil
