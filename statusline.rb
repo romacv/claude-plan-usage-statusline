@@ -26,6 +26,7 @@ class ClaudeStatusLine
   CACHE_TTL = 600
   LOOP_DIR = File.join(Dir.home, '.claude', 'loops')
   LOOP_GOAL_MAX = 22
+  STANDDOWN_FILE = File.join(Dir.home, '.claude', 'usage-guard', 'standdown.json')
   KEYCHAIN_SERVICE = 'Claude Code-credentials'
   MIDDLE_TRUNCATE_THRESHOLD = 23
   MIDDLE_TRUNCATE_HEAD = 11
@@ -71,7 +72,8 @@ class ClaudeStatusLine
       (colorize("\u{2726}#{effort}", :plan) if effort),
       context_segment(usage[:context]),
       usage_segment(usage[:session], usage[:session_pct], usage[:reset_time]),
-      usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time])
+      usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time]),
+      standdown_segment
     ].compact
     line1 = line1_parts.join(" #{sep} ")
 
@@ -131,6 +133,30 @@ class ClaudeStatusLine
     parts << "loop:#{interval}" unless interval.empty?
     parts << "goal:#{goal}" unless goal.empty?
     colorize("\u{27F3}#{parts.join(' ')}", :loop)
+  end
+
+  def standdown_data
+    return nil unless File.exist?(STANDDOWN_FILE)
+
+    data = JSON.parse(File.read(STANDDOWN_FILE))
+    data.is_a?(Hash) && data['breach'] ? data : nil
+  rescue StandardError
+    nil
+  end
+
+  def standdown_segment
+    data = standdown_data
+    return nil unless data
+
+    clock = format_wake_clock(data['wake_at_epoch'])
+    label = colorize("\u{23F8}pause", :ctx_alert)
+    clock ? "#{label} #{colorize("resume #{clock}", :time)}" : label
+  end
+
+  def format_wake_clock(epoch)
+    return nil unless epoch
+
+    Time.at(epoch.to_i).strftime('%H:%M')
   end
 
   def git_data

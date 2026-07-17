@@ -36,6 +36,14 @@ The segment reads a per-session state file at `~/.claude/loops/<session_id>.json
 
 Keying by session id means each session shows only its own loop, and a leftover file from a closed session is inert -- its id never recurs. When no matching file is present, the segment shows `⟳loop:off`.
 
+## Standdown
+
+When the companion [usage-guard](https://github.com/romacv/claude-usage-guard) has paused the session (headroom below its threshold, waiting for the limit to reset), the status bar adds a pause segment:
+
+- `⏸pause resume 20:01` -- paused, with the local clock time work will resume
+
+The segment reads usage-guard's marker at `~/.claude/usage-guard/standdown.json` and only appears while a breach is active -- if usage-guard isn't installed, the file is absent and nothing shows. It shares the usage cache this status line already maintains, so no extra API calls.
+
 ## Requirements
 
 - Ruby (system Ruby on macOS works fine)
