@@ -27,6 +27,12 @@ class ClaudeStatusLine
   LOOP_DIR = File.join(Dir.home, '.claude', 'loops')
   LOOP_GOAL_MAX = 22
   USAGE_GUARD_DIR = File.join(Dir.home, '.claude', 'usage-guard')
+  # Hide a stand-down badge whose wake time is this many seconds past — the
+  # resume cron may re-schedule ~5 min on a not-yet-reset window without
+  # touching the marker, so keep the badge honest through the normal resume
+  # path but never let a stale/orphaned marker freeze it. The reaper that
+  # actually deletes the file lives in usage-guard's stop-hook.sh.
+  STANDDOWN_STALE_GRACE = 300
   KEYCHAIN_SERVICE = 'Claude Code-credentials'
   MIDDLE_TRUNCATE_THRESHOLD = 23
   MIDDLE_TRUNCATE_HEAD = 11
@@ -152,7 +158,18 @@ class ClaudeStatusLine
     return nil unless File.exist?(path)
 
     data = JSON.parse(File.read(path))
-    data.is_a?(Hash) && data['breach'] ? data : nil
+    return nil unless data.is_a?(Hash) && data['breach']
+
+    # Self-expire: once the wake time is safely past, the window has reset —
+    # hide the badge even if no lead response or RESUME has cleared the marker
+    # yet (an idle stood-down session never responds again). Pure read: the
+    # file is deleted by stop-hook.sh's reaper, not here. `wake > 0` guard is
+    # essential — nil.to_i == 0, so a marker missing wake_at_epoch must keep
+    # rendering (show badge, no clock) rather than read as "always past".
+    wake = data['wake_at_epoch'].to_i
+    return nil if wake.positive? && Time.now.to_i > wake + STANDDOWN_STALE_GRACE
+
+    data
   rescue StandardError
     nil
   end
