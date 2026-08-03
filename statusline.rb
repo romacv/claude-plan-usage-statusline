@@ -27,6 +27,9 @@ class ClaudeStatusLine
   LOOP_DIR = File.join(Dir.home, '.claude', 'loops')
   LOOP_GOAL_MAX = 22
   USAGE_GUARD_DIR = File.join(Dir.home, '.claude', 'usage-guard')
+  CRONS_FILE = File.join(Dir.home, '.claude', 'crons.json')
+  CRON_DISPLAY_MAX = 3
+  CRON_LABEL_MAX = 22
   # Hide a stand-down badge whose wake time is this many seconds past — the
   # resume cron may re-schedule ~5 min on a not-yet-reset window without
   # touching the marker, so keep the badge honest through the normal resume
@@ -87,7 +90,8 @@ class ClaudeStatusLine
       (colorize("\u{2442}#{git[:worktree]}", :worktree) if git[:worktree]),
       colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color]),
       loop_segment,
-      pause_segment
+      pause_segment,
+      cron_segment
     ].compact
     line2 = line2_parts.join(" #{sep} ")
 
@@ -201,8 +205,74 @@ class ClaudeStatusLine
   def format_wake_clock(epoch)
     return nil unless epoch
 
-    t = Time.at(epoch.to_i).localtime
+    format_local_clock(Time.at(epoch.to_i).localtime)
+  end
+
+  def format_local_clock(t)
     t.strftime('%Y%m%d') == Time.now.strftime('%Y%m%d') ? t.strftime('%H:%M') : t.strftime('%b %-d %H:%M')
+  end
+
+  def crons_data
+    return nil unless File.exist?(CRONS_FILE)
+
+    data = JSON.parse(File.read(CRONS_FILE))
+    data.is_a?(Array) ? data : nil
+  rescue StandardError
+    nil
+  end
+
+  def cron_stale?(entry)
+    return false unless entry['oneShot'] && entry['next']
+
+    Time.parse(entry['next']) < Time.now
+  rescue StandardError
+    false
+  end
+
+  def cron_sort_key(entry)
+    return Float::INFINITY unless entry['next']
+
+    Time.parse(entry['next']).to_f
+  rescue StandardError
+    Float::INFINITY
+  end
+
+  def cron_next_clock(next_str)
+    format_local_clock(Time.parse(next_str).localtime)
+  rescue StandardError
+    nil
+  end
+
+  def short_cron(cron)
+    cron = sanitize(cron)
+    m = cron.match(/\A\*\/(\d+) \* \* \* \*\z/)
+    m ? "*/#{m[1]}m" : cron
+  end
+
+  def cron_entry_text(entry)
+    label = sanitize(entry['label']).gsub(/\s+/, ' ').strip
+    label = 'cron' if label.empty?
+    label = "#{label[0, CRON_LABEL_MAX]}\u{2026}" if label.length > CRON_LABEL_MAX + 1
+    prefix = (entry['next'] && cron_next_clock(entry['next'])) || short_cron(entry['cron'])
+    "#{prefix} #{label}".strip
+  end
+
+  def cron_segment
+    data = crons_data
+    return nil unless data
+
+    active = data.select { |e| e.is_a?(Hash) }
+                 .reject { |e| cron_stale?(e) }
+                 .sort_by { |e| cron_sort_key(e) }
+    return nil if active.empty?
+
+    shown = active.first(CRON_DISPLAY_MAX).map { |e| cron_entry_text(e) }
+    extra = active.size - shown.size
+    text = shown.join(" \u{00B7} ")
+    text += " +#{extra}" if extra > 0
+    colorize("\u{23F0}#{text}", :time)
+  rescue StandardError
+    nil
   end
 
   def git_data
