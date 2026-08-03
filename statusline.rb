@@ -270,7 +270,7 @@ class ClaudeStatusLine
     extra = active.size - shown.size
     text = shown.join(" \u{00B7} ")
     text += " +#{extra}" if extra > 0
-    colorize("\u{23F0}#{text}", :time)
+    colorize("@#{text}", :time)
   rescue StandardError
     nil
   end

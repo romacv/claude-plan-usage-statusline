@@ -41,8 +41,8 @@ Keying by session id means each session shows only its own loop, and a leftover 
 
 Claude Code session crons (scheduled via its `CronCreate` tool) are in-memory only -- the CLI has no API for a status line to query them. This status line instead reads a small JSON registry file that a running agent session is expected to keep in sync with its own scheduled crons, and renders a compact summary:
 
-- `⏰21:01 sync-report` -- a one-shot cron, showing its next fire time and label
-- `⏰*/30m poll-status` -- a recurring cron with no `next` time recorded, falling back to a short form of its `cron` field (`*/30 * * * *` -- every 30 minutes -- becomes `*/30m`)
+- `@21:01 sync-report` -- a one-shot cron, showing its next fire time and label
+- `@*/30m poll-status` -- a recurring cron with no `next` time recorded, falling back to a short form of its `cron` field (`*/30 * * * *` -- every 30 minutes -- becomes `*/30m`)
 - Multiple entries are separated by ` · `, capped at 3, with a trailing `+N` for any remainder beyond that
 
 ### Registry file
