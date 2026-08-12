@@ -74,11 +74,11 @@ class ClaudeStatusLine
     sep = "#{@colors[:gray]}|#{@colors[:reset]}"
     usage = calculate_usage
     git = git_data
-    effort = @effort_level ? "Eff:#{@effort_level}" : nil
+    model_segment = colorize("\u{25C6}#{@model_name}", :model)
+    model_segment += colorize("\u{2726}#{@effort_level}", :plan) if @effort_level
 
     line1_parts = [
-      colorize("\u{25C6}#{@model_name}", :model),
-      (colorize("\u{2726}#{effort}", :plan) if effort),
+      model_segment,
       context_segment(usage[:context]),
       usage_segment(usage[:session], usage[:session_pct], usage[:reset_time]),
       usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time])
