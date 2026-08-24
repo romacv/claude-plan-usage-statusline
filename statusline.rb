@@ -45,10 +45,9 @@ class ClaudeStatusLine
   CACHE_TTL = 600
   BACKOFF_FILE = '/tmp/claude_usage_backoff'
   STALE_DISPLAY_MAX = 21_600
-  LOOP_DIR = File.join(Dir.home, '.claude', 'loops')
   LOOP_GOAL_MAX = 22
   USAGE_GUARD_DIR = File.join(Dir.home, '.claude', 'usage-guard')
-  CRONS_FILE = File.join(Dir.home, '.claude', 'crons.json')
+  TRANSCRIPT_CACHE_DIR = File.join(Dir.home, '.claude', 'cache')
   CRON_DISPLAY_MAX = 3
   CRON_LABEL_MAX = 22
   # Hide a stand-down badge whose wake time is this many seconds past — the
@@ -91,6 +90,7 @@ class ClaudeStatusLine
     @effort_level = @input_data.dig('effort', 'level')
     @session_id = @input_data['session_id'] || @input_data['sessionId']
     @rate_limits = @input_data['rate_limits']
+    @transcript_path = @input_data['transcript_path']
   end
 
   def generate
@@ -151,13 +151,43 @@ class ClaudeStatusLine
     middle_truncate(@current_dir.sub(/\A#{Regexp.escape(Dir.home)}(?=\/|\z)/, '~'))
   end
 
+  # Derived state (crons + loop) parsed out of this session's own transcript
+  # — see the transcript scanning section below. `loop_data` prefers an
+  # explicit ScheduleWakeup-driven loop; absent that, a live cron implies an
+  # interval loop pacing itself, using the newest cron's schedule/label.
   def loop_data
-    return nil unless @session_id
-    path = File.join(LOOP_DIR, "#{@session_id}.json")
-    return nil unless File.exist?(path)
+    state = transcript_state
+    active = state['loop']
+    return active if active.is_a?(Hash) && active['active']
 
-    data = JSON.parse(File.read(path))
-    data.is_a?(Hash) && data['active'] ? data : nil
+    crons = state['crons']
+    return nil unless crons.is_a?(Hash) && !crons.empty?
+
+    qualifying = crons.values.select { |c| c.is_a?(Hash) && !c['oneShot'] && !cron_stale?(c) }
+    return nil if qualifying.empty?
+
+    newest = qualifying.last
+    return nil unless newest.is_a?(Hash)
+
+    {
+      'active' => true,
+      'interval' => human_cron_interval(newest['cron']),
+      'goal' => newest['label'],
+      '_source_cron_id' => newest['id']
+    }
+  rescue StandardError
+    nil
+  end
+
+  # The cron id backing the loop when it was derived from the fallback path
+  # (no ScheduleWakeup in the transcript) — used by cron_segment to suppress
+  # that cron from its own listing so it isn't shown twice. nil when the
+  # loop came from ScheduleWakeup or there is no loop.
+  def loop_backing_cron_id
+    data = loop_data
+    return nil unless data.is_a?(Hash)
+
+    data['_source_cron_id']
   rescue StandardError
     nil
   end
@@ -236,12 +266,259 @@ class ClaudeStatusLine
   end
 
   def crons_data
-    return nil unless File.exist?(CRONS_FILE)
+    crons = transcript_state['crons']
+    return nil unless crons.is_a?(Hash) && !crons.empty?
 
-    data = JSON.parse(File.read(CRONS_FILE))
-    data.is_a?(Array) ? data : nil
+    crons.values
   rescue StandardError
     nil
+  end
+
+  # --- Transcript-derived state -------------------------------------------
+  #
+  # `cron_segment`/`loop_segment` used to read registry files nothing ever
+  # wrote. Instead we scan this session's own transcript (the `.jsonl` at
+  # `transcript_path`) for CronCreate/CronDelete/ScheduleWakeup tool calls
+  # and derive the same shapes those renderers already expect. Subagent
+  # activity (`isSidechain: true`) is skipped throughout.
+  #
+  # Rescanning a multi-megabyte transcript on every render would be wasteful,
+  # so the byte offset already scanned plus the derived state are cached per
+  # session at TRANSCRIPT_CACHE_DIR/statusline-session-<sid>.json. A shrunk
+  # or rotated transcript (cache size > current size) forces a full rescan.
+
+  def transcript_state
+    @transcript_state ||= compute_transcript_state
+  end
+
+  def default_transcript_state
+    { 'crons' => {}, 'loop' => nil, 'pending' => {} }
+  end
+
+  def compute_transcript_state
+    return default_transcript_state unless @transcript_path && File.exist?(@transcript_path)
+
+    file_size = File.size(@transcript_path)
+    cache_path = transcript_cache_path
+    cached = cache_path && read_transcript_cache(cache_path)
+
+    if cached && cached['size'].is_a?(Integer) && cached['state'].is_a?(Hash) && file_size >= cached['size']
+      offset = cached['offset'].is_a?(Integer) ? cached['offset'] : 0
+      state = cached['state']
+    else
+      offset = 0
+      state = default_transcript_state
+    end
+
+    new_offset = scan_transcript(@transcript_path, offset, state)
+    if cache_path
+      write_transcript_cache_atomic(cache_path, { 'offset' => new_offset, 'size' => file_size, 'state' => state })
+    end
+    state
+  rescue StandardError
+    default_transcript_state
+  end
+
+  def transcript_cache_path
+    return nil unless @session_id
+
+    sid = @session_id.to_s.gsub(/[^A-Za-z0-9_-]/, '')
+    return nil if sid.empty?
+
+    File.join(TRANSCRIPT_CACHE_DIR, "statusline-session-#{sid}.json")
+  end
+
+  def read_transcript_cache(path)
+    return nil unless File.exist?(path)
+
+    data = JSON.parse(File.read(path))
+    data.is_a?(Hash) ? data : nil
+  rescue StandardError
+    nil
+  end
+
+  def ensure_transcript_cache_dir(dir)
+    return if Dir.exist?(dir)
+
+    Dir.mkdir(dir)
+  rescue StandardError
+    nil
+  end
+
+  # Atomic write, same pattern as write_cache_atomic: temp file in the same
+  # directory + File.rename, so a concurrently-rendering session never
+  # observes a torn/partial cache file.
+  def write_transcript_cache_atomic(path, data)
+    dir = File.dirname(path)
+    ensure_transcript_cache_dir(dir)
+    tmp = File.join(dir, ".#{File.basename(path)}.#{Process.pid}.#{rand(1_000_000)}.tmp")
+    File.write(tmp, JSON.generate(data))
+    File.rename(tmp, path)
+  rescue StandardError
+    nil
+  end
+
+  # Reads only the new bytes past `offset`, parses whichever lines are fully
+  # written (a trailing partial line is left for the next render), and
+  # mutates `state` in place. Returns the new offset to persist.
+  def scan_transcript(path, offset, state)
+    content = File.open(path, 'rb') do |f|
+      f.seek(offset)
+      f.read
+    end
+    return offset if content.nil? || content.empty?
+
+    last_newline = content.rindex("\n")
+    return offset if last_newline.nil?
+
+    usable = content[0..last_newline]
+    pending = state['pending'] ||= {}
+    crons = state['crons'] ||= {}
+
+    usable.each_line { |line| process_transcript_line(line, pending, crons, state) }
+
+    offset + usable.bytesize
+  rescue StandardError
+    offset
+  end
+
+  def process_transcript_line(line, pending, crons, state)
+    line = line.strip
+    return if line.empty?
+
+    d = JSON.parse(line)
+    return unless d.is_a?(Hash)
+    return if d['isSidechain']
+
+    content = d.dig('message', 'content')
+    return unless content.is_a?(Array)
+
+    content.each do |block|
+      next unless block.is_a?(Hash)
+
+      case block['type']
+      when 'tool_use'
+        process_tool_use(block, pending, crons, state)
+      when 'tool_result'
+        process_tool_result(block, pending, crons, d['timestamp'])
+      end
+    end
+  rescue StandardError
+    nil
+  end
+
+  def process_tool_use(block, pending, crons, state)
+    case block['name']
+    when 'CronCreate'
+      pending[block['id']] = block['input'] if block['id'] && block['input'].is_a?(Hash)
+    when 'CronDelete'
+      del_id = block.dig('input', 'id') || block['id']
+      crons.delete(del_id) if del_id
+    when 'ScheduleWakeup'
+      input = block['input'].is_a?(Hash) ? block['input'] : {}
+      if input['stop']
+        state['loop'] = nil
+      else
+        state['loop'] = {
+          'active' => true,
+          'interval' => format_interval(input['delaySeconds']),
+          'goal' => two_word_label(input['reason'])
+        }
+      end
+    end
+  rescue StandardError
+    nil
+  end
+
+  # Anchored on Claude Code's own confirmation phrasing rather than a bare
+  # "(job|task) <hex>" — a transcript can contain a tool_result that merely
+  # *quotes* another session's cron output (e.g. a Bash result echoing
+  # `USE CronCreate id=… input={"cron"=>...}`), and a loose pattern would
+  # harvest ids that were never this session's. Claude Code words the two
+  # cron kinds differently: "Scheduled recurring job <id> (...)" and
+  # "Scheduled one-shot task <id> (...)".
+  CRON_CONFIRMATION = /\bScheduled (recurring job|one-shot task) ([0-9a-f]{6,})\b/
+
+  def process_tool_result(block, pending, crons, timestamp)
+    tid = block['tool_use_id']
+    return unless tid
+
+    input = pending.delete(tid)
+    return unless input
+
+    text = extract_result_text(block)
+    m = text.to_s.match(CRON_CONFIRMATION)
+    return unless m
+
+    kind, job_id = m[1], m[2]
+    one_shot = input.key?('recurring') ? (input['recurring'] == false) : (kind == 'one-shot task')
+
+    entry = {
+      'id' => job_id,
+      'cron' => input['cron'],
+      'label' => two_word_label(input['prompt']),
+      'oneShot' => one_shot
+    }
+    entry['next'] = one_shot_next(input['cron'], timestamp) if one_shot
+
+    crons[job_id] = entry
+  rescue StandardError
+    nil
+  end
+
+  # A fired one-shot is auto-deleted by Claude Code with no trace left in the
+  # transcript, so cron_stale? can only expire it if we pin its one and only
+  # fire time ourselves. The cron expression for a one-shot fully determines
+  # that moment (minute hour day-of-month month, day-of-week is "*"), so we
+  # compute it once at creation and store it as `next`. Any non-integer
+  # field (or an invalid calendar date, e.g. day-of-month/month combo that
+  # doesn't exist) leaves `next` absent — the entry then just persists,
+  # matching a recurring cron, rather than guessing and risking a wrong
+  # expiry. The year is chosen so the result is the next such moment at or
+  # after `reference_iso` (the creation time), so a job scheduled for a
+  # month earlier in the calendar than the reference rolls to next year
+  # instead of resolving into the past.
+  def one_shot_next(cron, reference_iso)
+    fields = cron.to_s.split(/\s+/)
+    return nil unless fields.length == 5
+
+    minute, hour, dom, month, = fields
+    return nil unless [minute, hour, dom, month].all? { |f| f.match?(/\A\d+\z/) }
+
+    ref = reference_iso ? Time.parse(reference_iso) : Time.now
+    ref = ref.localtime
+
+    candidate = Time.new(ref.year, month.to_i, dom.to_i, hour.to_i, minute.to_i, 0, ref.utc_offset)
+    candidate = Time.new(ref.year + 1, month.to_i, dom.to_i, hour.to_i, minute.to_i, 0, ref.utc_offset) if candidate < ref
+    candidate.iso8601
+  rescue StandardError
+    nil
+  end
+
+  def extract_result_text(block)
+    content = block['content']
+    case content
+    when String
+      content
+    when Array
+      content.map { |c| c.is_a?(Hash) ? c['text'] : nil }.compact.join(' ')
+    end
+  rescue StandardError
+    nil
+  end
+
+  # First two words of a cron prompt or ScheduleWakeup reason, used as the
+  # label/goal. CRON_LABEL_MAX/LOOP_GOAL_MAX truncation downstream is only a
+  # backstop for a pathological single long word.
+  def two_word_label(text)
+    text.to_s.gsub(/\s+/, ' ').strip.split(' ').first(2).join(' ')
+  end
+
+  def format_interval(delay_seconds)
+    seconds = delay_seconds.to_i
+    return "#{seconds}s" if seconds <= 0 || seconds % 60 != 0
+
+    "#{seconds / 60}m"
   end
 
   def cron_stale?(entry)
@@ -269,7 +546,29 @@ class ClaudeStatusLine
   def short_cron(cron)
     cron = sanitize(cron)
     m = cron.match(/\A\*\/(\d+) \* \* \* \*\z/)
-    m ? "*/#{m[1]}m" : cron
+    return "*/#{m[1]}m" if m
+
+    m = cron.match(/\A(\d{1,2}) \* \* \* \*\z/)
+    return ":#{m[1]}" if m
+
+    cron
+  end
+
+  # Human period for a cron expression, used only when that cron IS the loop
+  # (the fallback-derivation path). Unlike short_cron (which renders the
+  # cron's own short form, e.g. "*/15m" or ":43"), this reads as an interval.
+  def human_cron_interval(cron)
+    sanitized = sanitize(cron)
+
+    m = sanitized.match(/\A\*\/(\d+) \* \* \* \*\z/)
+    return "#{m[1]}m" if m
+
+    return '1h' if sanitized.match?(/\A\d{1,2} \* \* \* \*\z/)
+    return '1d' if sanitized.match?(/\A\d{1,2} \d{1,2} \* \* \*\z/)
+
+    short_cron(sanitized)
+  rescue StandardError
+    short_cron(cron)
   end
 
   def cron_entry_text(entry)
@@ -284,8 +583,10 @@ class ClaudeStatusLine
     data = crons_data
     return nil unless data
 
+    backing_id = loop_backing_cron_id
     active = data.select { |e| e.is_a?(Hash) }
                  .reject { |e| cron_stale?(e) }
+                 .reject { |e| backing_id && e['id'] == backing_id }
                  .sort_by { |e| cron_sort_key(e) }
     return nil if active.empty?
 

@@ -17,8 +17,8 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 - **Context window** -- remaining % from Claude Code's input, color-graded
 - **5h usage** -- session headroom with countdown to reset, color-graded (amber at 35% left, red at 15% left); shows `?` when usage data is unavailable instead of a misleading 100%
 - **1w usage** -- weekly headroom with reset date, color-graded
-- **Loop status** -- shows an active recurring loop and its goal when a session loop-state file is present (see [Loop Status](#loop-status))
-- **Cron display** -- shows upcoming scheduled crons from a registry file (see [Cron Display](#cron-display))
+- **Loop status** -- shows an active recurring loop and its goal, derived from this session's own transcript (see [Loop Status](#loop-status))
+- **Cron display** -- shows this session's own scheduled crons, derived from its transcript (see [Cron Display](#cron-display))
 - **Git** -- branch, worktree (when in a git worktree), staged/modified counts, ahead/behind
 - **Live refresh** -- the primary stdin reading writes through to the cache on every render; the API fallback is also refreshed automatically after each agent response via Claude Code `Stop` hook, with 900-second debounce
 
@@ -29,60 +29,20 @@ The status bar shows whether a recurring loop is active for the current session 
 - `⟳loop:15m goal:…` -- an active loop, interval and goal (goal truncated to fit)
 - `⟳loop:off` -- no active loop
 
-The segment reads a per-session state file at `~/.claude/loops/<session_id>.json`, keyed by the `session_id` Claude Code passes to the status line. Write it when a loop starts, remove it when the loop stops:
-
-```json
-{"active": true, "interval": "15m", "goal": "your goal here", "job_id": "abc123"}
-```
-
-Keying by session id means each session shows only its own loop, and a leftover file from a closed session is inert -- its id never recurs. When no matching file is present, the segment shows `⟳loop:off`.
+There is no registry file and nothing to write. Both segments are derived by scanning this session's own transcript (the `.jsonl` Claude Code passes as `transcript_path`) for `ScheduleWakeup` and `CronCreate`/`CronDelete` tool calls -- see [How loop and cron are derived](#how-loop-and-cron-are-derived). A `ScheduleWakeup` with `stop: true` clears the loop; absent any `ScheduleWakeup`, a live cron is shown as an interval loop pacing itself, using that cron's schedule and label. Only this session's own activity counts -- subagent (sidechain) tool calls are ignored, and a session with no matching activity shows `⟳loop:off`.
 
 ## Cron Display
 
-Claude Code session crons (scheduled via its `CronCreate` tool) are in-memory only -- the CLI has no API for a status line to query them. This status line instead reads a small JSON registry file that a running agent session is expected to keep in sync with its own scheduled crons, and renders a compact summary:
+Claude Code session crons (scheduled via its `CronCreate` tool) are in-memory only -- the CLI has no API for a status line to query them. This status line instead recovers them from the transcript, and renders a compact summary:
 
-- `@21:01 sync-report` -- a one-shot cron, showing its next fire time and label
-- `@*/30m poll-status` -- a recurring cron with no `next` time recorded, falling back to a short form of its `cron` field (`*/30 * * * *` -- every 30 minutes -- becomes `*/30m`)
+- `@:43 sync-report` -- a recurring cron, showing a short form of its `cron` field and its label (`43 * * * *` -- the 43rd minute of every hour -- becomes `:43`; `*/30 * * * *` becomes `*/30m`)
 - Multiple entries are separated by ` · `, capped at 3, with a trailing `+N` for any remainder beyond that
 
-### Registry file
+### How loop and cron are derived
 
-Path: `~/.claude/crons.json` -- a JSON array of cron entries:
+Only this session's own tool calls count -- any transcript line marked `isSidechain: true` (subagent activity) is skipped. A `CronCreate` tool call is matched to its result by `tool_use_id`; the job id is pulled from the result text, and an entry is recorded with that id, the `cron` expression, and a label made from the first few words of the `prompt`. A later `CronDelete` naming that id removes the entry. A `ScheduleWakeup` tool call records an active loop with its `delaySeconds` (as an interval) and `reason` (as the goal); one with `stop: true` clears it.
 
-```json
-[
-  {
-    "id": "a1b2c3d4",
-    "cron": "*/30 * * * *",
-    "label": "poll-status",
-    "next": "2026-08-03T21:30:00",
-    "oneShot": false,
-    "session": "session-id-here",
-    "created": "2026-08-03T16:00:00"
-  }
-]
-```
-
-| Field | Required | Meaning |
-| :--- | :--- | :--- |
-| `id` | yes | Identifier for the cron (e.g. the id returned by `CronCreate`) |
-| `cron` | yes | The cron expression, used as the display fallback when `next` is absent |
-| `label` | yes | Short human-readable text shown next to the time; truncated with `…` beyond 22 characters |
-| `next` | no | ISO-8601 **local** time of the next scheduled fire; when present, this is what's rendered instead of the raw `cron` field |
-| `oneShot` | yes | `true` for a single scheduled run, `false` for a recurring cron |
-| `session` | no | The session id that created the cron, for bookkeeping |
-| `created` | yes | ISO-8601 local time the entry was registered |
-
-### Who writes it
-
-Claude Code itself does not write this file. The agent session that calls `CronCreate` or `CronDelete` is responsible for mirroring that call into the registry in the same turn: append an entry on create, remove it on delete. A one-shot entry is also expected to be removed once it fires (nothing re-reads a fired one-shot), since a scheduled cron only runs once and the agent session handling it is best placed to clean up its own entry. Multiple sessions may share the file; entries are additive and keyed by `id`, so one session's writes don't need to know about another's.
-
-### Rendering rules
-
-- Non-`Hash` entries in the array are ignored.
-- A one-shot (`oneShot: true`) whose `next` has already passed is treated as stale and hidden -- it's expected to have been cleaned up already, but the status line hides it either way rather than showing a fired cron as upcoming.
-- Remaining entries are sorted soonest-first by `next` (entries without a `next` sort last) and capped at 3, with any remainder shown as `+N`.
-- Missing, empty, or corrupt files render nothing -- the segment fails silently and never crashes the status line.
+Scanning the whole transcript on every render would be wasteful, so the byte offset already scanned and the derived state are cached per session under `~/.claude/cache/`. A shrunk or rotated transcript forces a full rescan. Any failure to read, parse, or cache -- missing file, corrupt JSON, anything -- degrades to no segment rather than a crash or stale wrong answer.
 
 ## Standdown
 
