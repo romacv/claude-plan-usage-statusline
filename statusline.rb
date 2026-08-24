@@ -45,12 +45,7 @@ class ClaudeStatusLine
   CACHE_TTL = 600
   BACKOFF_FILE = '/tmp/claude_usage_backoff'
   STALE_DISPLAY_MAX = 21_600
-  LOOP_DIR = File.join(Dir.home, '.claude', 'loops')
-  LOOP_GOAL_MAX = 22
   USAGE_GUARD_DIR = File.join(Dir.home, '.claude', 'usage-guard')
-  CRONS_FILE = File.join(Dir.home, '.claude', 'crons.json')
-  CRON_DISPLAY_MAX = 3
-  CRON_LABEL_MAX = 22
   # Hide a stand-down badge whose wake time is this many seconds past — the
   # resume cron may re-schedule ~5 min on a not-yet-reset window without
   # touching the marker, so keep the badge honest through the normal resume
@@ -76,7 +71,6 @@ class ClaudeStatusLine
     worktree: "\033[38;5;180m",
     git_clean: "\033[38;5;96m",
     git_dirty: "\033[38;5;167m",
-    loop: "\033[38;5;114m",
     gray: "\033[90m",
     reset: "\033[0m"
   }.freeze
@@ -112,9 +106,7 @@ class ClaudeStatusLine
       colorize(short_path, :directory),
       (colorize("\u{2442}#{git[:worktree]}", :worktree) if git[:worktree]),
       colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color]),
-      loop_segment,
-      pause_segment,
-      cron_segment
+      pause_segment
     ].compact
     line2 = line2_parts.join(" #{sep} ")
 
@@ -129,7 +121,7 @@ class ClaudeStatusLine
   end
 
   # Strip C0 control bytes (incl. ESC 0x1b) and DEL from any file-sourced string
-  # before it reaches the terminal, so a crafted marker/loop file can't inject
+  # before it reaches the terminal, so a crafted marker file can't inject
   # its own escape sequences. Apply to the DATA, never to colorized output.
   def sanitize(text)
     text.to_s.gsub(/[\u0000-\u001f\u007f]/, '')
@@ -149,30 +141,6 @@ class ClaudeStatusLine
   def short_path
     return '' unless @current_dir
     middle_truncate(@current_dir.sub(/\A#{Regexp.escape(Dir.home)}(?=\/|\z)/, '~'))
-  end
-
-  def loop_data
-    return nil unless @session_id
-    path = File.join(LOOP_DIR, "#{@session_id}.json")
-    return nil unless File.exist?(path)
-
-    data = JSON.parse(File.read(path))
-    data.is_a?(Hash) && data['active'] ? data : nil
-  rescue StandardError
-    nil
-  end
-
-  def loop_segment
-    data = loop_data
-    return colorize("\u{27F3}loop:off", :gray) unless data
-
-    interval = data['interval'].to_s
-    goal = sanitize(data['goal']).gsub(/\s+/, ' ').strip
-    goal = "#{goal[0, LOOP_GOAL_MAX]}\u{2026}" if goal.length > LOOP_GOAL_MAX + 1
-    parts = []
-    parts << "loop:#{interval}" unless interval.empty?
-    parts << "goal:#{goal}" unless goal.empty?
-    colorize("\u{27F3}#{parts.join(' ')}", :loop)
   end
 
   def standdown_data
@@ -233,69 +201,6 @@ class ClaudeStatusLine
 
   def format_local_clock(t)
     t.strftime('%Y%m%d') == Time.now.strftime('%Y%m%d') ? t.strftime('%H:%M') : t.strftime('%b %-d %H:%M')
-  end
-
-  def crons_data
-    return nil unless File.exist?(CRONS_FILE)
-
-    data = JSON.parse(File.read(CRONS_FILE))
-    data.is_a?(Array) ? data : nil
-  rescue StandardError
-    nil
-  end
-
-  def cron_stale?(entry)
-    return false unless entry['oneShot'] && entry['next']
-
-    Time.parse(entry['next']) < Time.now
-  rescue StandardError
-    false
-  end
-
-  def cron_sort_key(entry)
-    return Float::INFINITY unless entry['next']
-
-    Time.parse(entry['next']).to_f
-  rescue StandardError
-    Float::INFINITY
-  end
-
-  def cron_next_clock(next_str)
-    format_local_clock(Time.parse(next_str).localtime)
-  rescue StandardError
-    nil
-  end
-
-  def short_cron(cron)
-    cron = sanitize(cron)
-    m = cron.match(/\A\*\/(\d+) \* \* \* \*\z/)
-    m ? "*/#{m[1]}m" : cron
-  end
-
-  def cron_entry_text(entry)
-    label = sanitize(entry['label']).gsub(/\s+/, ' ').strip
-    label = 'cron' if label.empty?
-    label = "#{label[0, CRON_LABEL_MAX]}\u{2026}" if label.length > CRON_LABEL_MAX + 1
-    prefix = (entry['next'] && cron_next_clock(entry['next'])) || short_cron(entry['cron'])
-    "#{prefix} #{label}".strip
-  end
-
-  def cron_segment
-    data = crons_data
-    return nil unless data
-
-    active = data.select { |e| e.is_a?(Hash) }
-                 .reject { |e| cron_stale?(e) }
-                 .sort_by { |e| cron_sort_key(e) }
-    return nil if active.empty?
-
-    shown = active.first(CRON_DISPLAY_MAX).map { |e| cron_entry_text(e) }
-    extra = active.size - shown.size
-    text = shown.join(" \u{00B7} ")
-    text += " +#{extra}" if extra > 0
-    colorize("@#{text}", :time)
-  rescue StandardError
-    nil
   end
 
   def git_data
