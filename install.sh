@@ -26,10 +26,11 @@ settings["statusLine"] = {
 settings["hooks"] ||= {}
 settings["hooks"]["Stop"] ||= []
 
-our_command = "bash $HOME/.claude/refresh-usage-cache.sh"
-already_installed = settings["hooks"]["Stop"].any? do |entry|
-  (entry["hooks"] || []).any? { |h| h["command"] == our_command }
+def has_command?(stop, needle)
+  stop.any? { |entry| (entry["hooks"] || []).any? { |h| h["command"].to_s.include?(needle) } }
 end
+
+already_installed = has_command?(settings["hooks"]["Stop"], "refresh-usage-cache.sh")
 
 unless already_installed
   settings["hooks"]["Stop"] << {

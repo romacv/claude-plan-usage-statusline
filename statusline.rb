@@ -4,7 +4,26 @@
 # Claude Code Status Line
 #
 # Displays model, usage, git, and workspace info in Claude Code's status bar.
-# Usage data is fetched from Anthropic's OAuth API and cached locally.
+# Usage is read primarily from the `rate_limits` block Claude Code pipes into
+# this script on stdin (see usage_from_rate_limits) — no token, keychain
+# read, or network call needed. That reading is also written through to the
+# local cache file so usage-guard/guard.sh sees fresh data on every render.
+#
+# When stdin carries no `rate_limits` (older Claude Code builds, or the
+# script run standalone), usage falls back to Anthropic's OAuth API, cached
+# locally. A 429 response records a shared backoff (/tmp/claude_usage_backoff)
+# that this script and refresh-usage-cache.sh both honor, so neither re-pins
+# the rate-limit budget. Data older than CACHE_TTL but within
+# STALE_DISPLAY_MAX is still shown, marked with a `~` prefix and gray color,
+# instead of being silently discarded.
+#
+# OAuth token resolution order (first non-empty wins), see fetch_oauth_token:
+#   1. $CLAUDE_CODE_OAUTH_TOKEN env var
+#   2. Token file: $CLAUDE_USAGE_TOKEN_FILE, default
+#      $HOME/.agents/keys/claude-oauth-token (set via `claude setup-token`)
+#   3. macOS keychain item "Claude Code-credentials" ->
+#      claudeAiOauth.accessToken (may not exist on newer Claude Code builds)
+# If none yield a token, the fetch is skipped and stale/default usage is shown.
 #
 # Usage:
 #   echo '{"workspace":{"current_dir":"/tmp"},"model":{"display_name":"Sonnet 4.6"},"context_window":{"remaining_percentage":80}}' | ruby ~/.claude/statusline.rb
@@ -24,6 +43,8 @@ require 'time'
 class ClaudeStatusLine
   CACHE_FILE = '/tmp/claude_usage_cache.json'
   CACHE_TTL = 600
+  BACKOFF_FILE = '/tmp/claude_usage_backoff'
+  STALE_DISPLAY_MAX = 21_600
   LOOP_DIR = File.join(Dir.home, '.claude', 'loops')
   LOOP_GOAL_MAX = 22
   USAGE_GUARD_DIR = File.join(Dir.home, '.claude', 'usage-guard')
@@ -37,6 +58,7 @@ class ClaudeStatusLine
   # actually deletes the file lives in usage-guard's stop-hook.sh.
   STANDDOWN_STALE_GRACE = 300
   KEYCHAIN_SERVICE = 'Claude Code-credentials'
+  DEFAULT_TOKEN_FILE = File.join(Dir.home, '.agents', 'keys', 'claude-oauth-token')
   MIDDLE_TRUNCATE_THRESHOLD = 23
   MIDDLE_TRUNCATE_HEAD = 11
   MIDDLE_TRUNCATE_TAIL = 8
@@ -68,6 +90,7 @@ class ClaudeStatusLine
     @ctx_remaining = @input_data.dig('context_window', 'remaining_percentage') || 100
     @effort_level = @input_data.dig('effort', 'level')
     @session_id = @input_data['session_id'] || @input_data['sessionId']
+    @rate_limits = @input_data['rate_limits']
   end
 
   def generate
@@ -80,8 +103,8 @@ class ClaudeStatusLine
     line1_parts = [
       model_segment,
       context_segment(usage[:context]),
-      usage_segment(usage[:session], usage[:session_pct], usage[:reset_time]),
-      usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time])
+      usage_segment(usage[:session], usage[:session_pct], usage[:reset_time], usage[:stale]),
+      usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time], usage[:stale])
     ].compact
     line1 = line1_parts.join(" #{sep} ")
 
@@ -335,8 +358,42 @@ class ClaudeStatusLine
     @keychain_data = {}
   end
 
+  # Resolution order: env var -> token file -> keychain. Each source is
+  # rescue-safe on its own so a bad/unreadable source falls through to the
+  # next one instead of raising.
   def fetch_oauth_token
+    token = env_oauth_token
+    return token if token
+
+    token = token_file_oauth_token
+    return token if token
+
+    keychain_oauth_token
+  end
+
+  def env_oauth_token
+    token = ENV['CLAUDE_CODE_OAUTH_TOKEN']
+    token = token.to_s.strip
+    token.empty? ? nil : token
+  rescue StandardError
+    nil
+  end
+
+  def token_file_oauth_token
+    path = ENV['CLAUDE_USAGE_TOKEN_FILE']
+    path = DEFAULT_TOKEN_FILE if path.nil? || path.empty?
+    return nil unless File.readable?(path)
+
+    token = File.read(path).strip
+    token.empty? ? nil : token
+  rescue StandardError
+    nil
+  end
+
+  def keychain_oauth_token
     read_keychain.dig('claudeAiOauth', 'accessToken')
+  rescue StandardError
+    nil
   end
 
   def fetch_api_usage(token)
@@ -351,7 +408,7 @@ class ClaudeStatusLine
     request['anthropic-beta'] = 'oauth-2025-04-20'
 
     response = http.request(request)
-    return { 'rate_limited' => true } if response.code == '429'
+    return { 'rate_limited' => true, 'retry_after' => response['retry-after'].to_i } if response.code == '429'
     return nil unless response.is_a?(Net::HTTPSuccess)
 
     JSON.parse(response.body)
@@ -359,14 +416,38 @@ class ClaudeStatusLine
     nil
   end
 
-  def read_cached_usage
-    return nil unless File.exist?(CACHE_FILE)
-    return nil if (Time.now - File.mtime(CACHE_FILE)) > CACHE_TTL
-
-    data = JSON.parse(File.read(CACHE_FILE))
-    data.is_a?(Hash) ? data : nil
+  def record_backoff(retry_after)
+    seconds = retry_after.to_i > 0 ? retry_after.to_i : 3600
+    File.write(BACKOFF_FILE, (Time.now.to_i + seconds).to_s)
   rescue StandardError
     nil
+  end
+
+  def backoff_active?
+    return false unless File.exist?(BACKOFF_FILE)
+
+    until_at = File.read(BACKOFF_FILE).strip
+    until_at.match?(/\A\d+\z/) && until_at.to_i > Time.now.to_i
+  rescue StandardError
+    false
+  end
+
+  def clear_backoff
+    File.delete(BACKOFF_FILE) if File.exist?(BACKOFF_FILE)
+  rescue StandardError
+    nil
+  end
+
+  # Reads and parses the cache file with no age filter, returning the data
+  # alongside its age in seconds. Freshness decisions live in calculate_usage.
+  def read_cached_usage
+    return [nil, nil] unless File.exist?(CACHE_FILE)
+
+    age = (Time.now - File.mtime(CACHE_FILE)).to_i
+    data = JSON.parse(File.read(CACHE_FILE))
+    data.is_a?(Hash) ? [data, age] : [nil, nil]
+  rescue StandardError
+    [nil, nil]
   end
 
   def write_cache(data)
@@ -375,21 +456,105 @@ class ClaudeStatusLine
     nil
   end
 
+  # Atomic write: temp file in the same directory + File.rename, so a
+  # concurrently-rendering session never observes a torn/partial cache file.
+  def write_cache_atomic(data)
+    dir = File.dirname(CACHE_FILE)
+    tmp = File.join(dir, ".#{File.basename(CACHE_FILE)}.#{Process.pid}.#{rand(1_000_000)}.tmp")
+    File.write(tmp, JSON.generate(data))
+    File.rename(tmp, CACHE_FILE)
+  rescue StandardError
+    nil
+  end
+
+  def usable_rate_window?(window)
+    window.is_a?(Hash) && !window['used_percentage'].nil?
+  end
+
+  # `resets_at` in the stdin payload is a Unix epoch integer (unlike the API
+  # payload's ISO-8601 string) — convert once here so every downstream
+  # consumer (display formatters, cache write) works from a real Time.
+  def epoch_to_iso(epoch)
+    return nil unless epoch
+
+    Time.at(epoch.to_i).iso8601
+  rescue StandardError
+    nil
+  end
+
+  # Writes the stdin reading through to CACHE_FILE in the same shape
+  # guard.sh already parses from the API (`utilization` + ISO string), so
+  # guard.sh keeps working unmodified and gets fresh data on every render.
+  # A window stdin didn't provide is omitted rather than written as null.
+  def write_stdin_cache(five_hour, seven_day)
+    payload = { 'source' => 'statusline_stdin' }
+    if usable_rate_window?(five_hour)
+      payload['five_hour'] = { 'utilization' => five_hour['used_percentage'], 'resets_at' => epoch_to_iso(five_hour['resets_at']) }
+    end
+    if usable_rate_window?(seven_day)
+      payload['seven_day'] = { 'utilization' => seven_day['used_percentage'], 'resets_at' => epoch_to_iso(seven_day['resets_at']) }
+    end
+    write_cache_atomic(payload)
+  rescue StandardError
+    nil
+  end
+
+  # Primary usage source: the `rate_limits` block Claude Code pipes into
+  # this script on stdin. No cache read, no backoff check, no token lookup,
+  # no HTTP — and never marked stale, since it is live data straight from
+  # the caller. Returns nil (falling through to the API-backed path below)
+  # when stdin carried no usable rate_limits, e.g. older Claude Code builds.
+  def usage_from_rate_limits
+    return nil unless @rate_limits.is_a?(Hash)
+
+    five_hour = @rate_limits['five_hour']
+    seven_day = @rate_limits['seven_day']
+    return nil unless usable_rate_window?(five_hour) || usable_rate_window?(seven_day)
+
+    write_stdin_cache(five_hour, seven_day)
+
+    session_remaining = usable_rate_window?(five_hour) ? [100 - five_hour['used_percentage'].to_f.round, 0].max : nil
+    weekly_remaining = usable_rate_window?(seven_day) ? [100 - seven_day['used_percentage'].to_f.round, 0].max : nil
+
+    {
+      context: "Ctx:#{@ctx_remaining.round}%",
+      session: "5h:#{session_remaining || '?'}%",
+      session_pct: session_remaining,
+      reset_time: format_reset_time(usable_rate_window?(five_hour) ? epoch_to_iso(five_hour['resets_at']) : nil),
+      weekly: "1w:#{weekly_remaining || '?'}%",
+      weekly_pct: weekly_remaining,
+      weekly_reset_time: format_weekly_reset_time(usable_rate_window?(seven_day) ? epoch_to_iso(seven_day['resets_at']) : nil)
+    }
+  rescue StandardError
+    nil
+  end
+
   def calculate_usage
-    cached = read_cached_usage
-    if cached
-      return default_usage if cached['rate_limited']
-      return parse_api_data(cached)
+    stdin_usage = usage_from_rate_limits
+    return stdin_usage if stdin_usage
+
+    data, age = read_cached_usage
+
+    if data && !data['rate_limited'] && age && age <= CACHE_TTL
+      return parse_api_data(data)
     end
 
-    token = fetch_oauth_token
-    if token
-      api_data = fetch_api_usage(token)
-      if api_data
-        write_cache(api_data)
-        return default_usage if api_data['rate_limited']
-        return parse_api_data(api_data)
+    if !backoff_active?
+      token = fetch_oauth_token
+      if token
+        api_data = fetch_api_usage(token)
+        if api_data && api_data['rate_limited']
+          record_backoff(api_data['retry_after'])
+        elsif api_data
+          write_cache(api_data)
+          clear_backoff
+          return parse_api_data(api_data)
+        end
       end
+    end
+
+    if data && !data['rate_limited'] && age && age <= STALE_DISPLAY_MAX
+      return parse_api_data(data).merge(stale: true)
     end
 
     default_usage
@@ -428,11 +593,13 @@ class ClaudeStatusLine
     :messages
   end
 
-  def usage_segment(text, remaining, reset)
+  def usage_segment(text, remaining, reset, stale = false)
+    label = stale ? "~#{text}" : text
     if reset.nil? || reset == '-'
-      colorize("\u{25AE}#{text.sub(/:.*/, ':?')}", :gray)
+      colorize("\u{25AE}#{label.sub(/:.*/, ':?')}", :gray)
     else
-      "#{colorize("\u{25AE}#{text}", usage_color(remaining))} #{colorize("\u{29D6}#{reset}", :time)}"
+      color = stale ? :gray : usage_color(remaining)
+      "#{colorize("\u{25AE}#{label}", color)} #{colorize("\u{29D6}#{reset}", :time)}"
     end
   end
 

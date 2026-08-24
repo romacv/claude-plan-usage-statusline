@@ -7,6 +7,8 @@ rm -f "$CLAUDE_DIR/statusline.rb"
 rm -f "$CLAUDE_DIR/refresh-usage-cache.sh"
 rm -f /tmp/claude_usage_cache.json
 rm -f /tmp/claude_usage_refresh.lock
+rm -f /tmp/claude_usage_backoff
+rm -f /tmp/claude_usage_status
 
 ruby - <<'RUBY'
 require "json"

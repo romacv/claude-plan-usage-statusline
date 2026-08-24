@@ -6,9 +6,9 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 
 ![Screenshot](screenshot.svg)
 
-**Real rate limit data.** Other tools count tokens locally from transcript files. This script reads server-side `five_hour` and `seven_day` utilization from Anthropic's OAuth API -- the actual numbers the rate limiter tracks.
+**Real rate limit data.** Other tools count tokens locally from transcript files. This script reads server-side `five_hour` and `seven_day` utilization -- the actual numbers the rate limiter tracks. Claude Code 2.1.241+ pipes that data straight into the status line command's stdin, so no token, keychain read, or network call is needed. Older Claude Code builds, or the script run standalone, fall back to Anthropic's OAuth API.
 
-**No permission prompts.** It's a plain CLI script, not a sandboxed app. Keychain is read by delegating to `/usr/bin/security` -- an Apple-signed system binary that already has Keychain access. The script itself never touches the Security APIs, so macOS has no reason to prompt. Outbound network from CLI doesn't trigger the firewall dialog either.
+**No permission prompts.** It's a plain CLI script, not a sandboxed app. On the primary stdin path there's nothing to prompt for -- no keychain access, no network call. On the API fallback, keychain is read by delegating to `/usr/bin/security` -- an Apple-signed system binary that already has Keychain access. The script itself never touches the Security APIs, so macOS has no reason to prompt. Outbound network from CLI doesn't trigger the firewall dialog either.
 
 ## Features
 
@@ -20,7 +20,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 - **Loop status** -- shows an active recurring loop and its goal when a session loop-state file is present (see [Loop Status](#loop-status))
 - **Cron display** -- shows upcoming scheduled crons from a registry file (see [Cron Display](#cron-display))
 - **Git** -- branch, worktree (when in a git worktree), staged/modified counts, ahead/behind
-- **Live refresh** -- cache updated automatically after each agent response via Claude Code `Stop` hook, with 30-second debounce
+- **Live refresh** -- the primary stdin reading writes through to the cache on every render; the API fallback is also refreshed automatically after each agent response via Claude Code `Stop` hook, with 900-second debounce
 
 ## Loop Status
 
@@ -136,12 +136,12 @@ Removes `statusline.rb`, `refresh-usage-cache.sh`, cache files, and the `statusL
 
 ## How It Works
 
-1. Reads OAuth token from macOS Keychain via `security find-generic-password`
-2. Calls `https://api.anthropic.com/api/oauth/usage` with the token
-3. Caches the response locally; skips the API call if cache is fresh
+1. Reads `rate_limits` from Claude Code's stdin payload when present, and writes that reading through to the local cache; otherwise resolves an OAuth token (env var, token file, then macOS Keychain via `security find-generic-password`) and calls `https://api.anthropic.com/api/oauth/usage`
+2. On the API path, caches the response locally; skips the call if the cache is fresh, and shows greyed stale data with a `~` prefix rather than discarding it once the cache outgrows the freshness window but is still under 6 hours old
+3. A shared Retry-After backoff, written on a 429 by either this script or `refresh-usage-cache.sh`, is honored before any API call
 4. Collects git state via `git status` / `git rev-parse` / `git rev-list`
 5. Outputs a two-line status bar with model, context, usage, reset timer, git info, and loop status
-6. A `Stop` hook runs `refresh-usage-cache.sh` asynchronously after each agent response, keeping the cache fresh without blocking Claude Code. Debounced to at most one API call per 30 seconds.
+6. A `Stop` hook runs `refresh-usage-cache.sh` asynchronously after each agent response, keeping the API-fallback cache fresh without blocking Claude Code. Debounced to at most one API call per 900 seconds.
 
 ## Menu Bar
 
