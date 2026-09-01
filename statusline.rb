@@ -573,8 +573,12 @@ class ClaudeStatusLine
     text.to_s.gsub(/\s+/, ' ').strip.split(' ').first(2).join(' ')
   end
 
+  # Four words, and an ellipsis when there were more — a label that stops
+  # mid-sentence with no mark reads as the whole thing.
   def four_word_label(text)
-    text.to_s.gsub(/\s+/, ' ').strip.split(' ').first(4).join(' ')
+    words = text.to_s.gsub(/\s+/, ' ').strip.split(' ')
+    label = words.first(4).join(' ')
+    words.length > 4 ? "#{label}\u{2026}" : label
   end
 
   # Line-3 labels read as words, never as a chopped one: take whole words up to
@@ -589,7 +593,9 @@ class ClaudeStatusLine
       out = "#{out} #{words.shift}"
     end
     out = out[0, limit] if out.length > limit
-    words.empty? ? out : "#{out}\u{2026}"
+    return out if words.empty? || out.end_with?("\u{2026}")
+
+    "#{out}\u{2026}"
   end
 
   def format_interval(delay_seconds)
@@ -701,6 +707,12 @@ class ClaudeStatusLine
 
     return '1h' if sanitized.match?(/\A\d{1,2} \* \* \* \*\z/)
     return '1d' if sanitized.match?(/\A\d{1,2} \d{1,2} \* \* \*\z/)
+
+    m = sanitized.match(%r{\A\d{1,2} \*/(\d{1,2}) \* \* \*\z})
+    return "#{m[1]}h" if m
+
+    m = sanitized.match(%r{\A\d{1,2} \d{1,2} \*/(\d{1,2}) \* \*\z})
+    return "#{m[1]}d" if m
 
     # A dated one-off (minute hour day month *) has no period at all: show the
     # clock it fires at rather than leaking the raw five-field expression.
