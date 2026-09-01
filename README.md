@@ -57,7 +57,7 @@ Claude Code session crons (scheduled via its `CronCreate` tool) are in-memory on
 
 - `◷cron:17:13 (1h) check my tasks` -- when it next fires, how often it repeats, and its label
 - The cadence in parentheses is `15m`, `1h`, `1d` or `once` for a one-shot; `◷crons:` with ` · ` between entries when there is more than one
-- Jobs already promoted to the loop segment are not repeated here, and usage-guard's resume job is labelled `resume` rather than by its protocol prompt
+- Jobs already promoted to the loop segment are not repeated here, and usage-guard's resume job is labelled `resume <the parked work>`, read from its checkpoint, rather than by its protocol prompt
 
 ### How loop and cron are derived
 

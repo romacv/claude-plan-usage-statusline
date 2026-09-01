@@ -731,8 +731,30 @@ class ClaudeStatusLine
     human_cron_interval(entry['cron'])
   end
 
+  # "resume" alone says nothing about what comes back. The stand-down's own
+  # checkpoint records the work that was parked, so name that instead.
+  def resume_label
+    goal = checkpoint_goal
+    goal.empty? ? 'resume the paused work' : "resume #{word_label(four_word_label(goal))}"
+  end
+
+  def checkpoint_goal
+    return '' unless @session_id
+
+    sid = @session_id.to_s.gsub(/[^A-Za-z0-9_-]/, '')
+    return '' if sid.empty?
+
+    path = File.join(USAGE_GUARD_DIR, "resume-#{sid}.json")
+    return '' unless File.exist?(path)
+
+    data = JSON.parse(File.read(path))
+    data.is_a?(Hash) ? sanitize(data['goal']).strip : ''
+  rescue StandardError
+    ''
+  end
+
   def cron_entry_text(entry)
-    label = resume_cron?(entry) ? 'resume' : word_label(entry['label'])
+    label = resume_cron?(entry) ? resume_label : word_label(entry['label'])
     label = 'cron' if label.empty?
     clock = (entry['next'] && cron_next_clock(entry['next'])) ||
             next_recurring_clock(entry['cron']) ||
