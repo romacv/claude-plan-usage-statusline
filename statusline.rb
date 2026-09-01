@@ -45,7 +45,7 @@ class ClaudeStatusLine
   CACHE_TTL = 600
   BACKOFF_FILE = '/tmp/claude_usage_backoff'
   STALE_DISPLAY_MAX = 21_600
-  LABEL_MAX = 20
+  LABEL_MAX = 28
   USAGE_GUARD_DIR = File.join(Dir.home, '.claude', 'usage-guard')
   TRANSCRIPT_CACHE_DIR = File.join(Dir.home, '.claude', 'cache')
   # Hide a stand-down badge whose wake time is this many seconds past — the
@@ -211,7 +211,7 @@ class ClaudeStatusLine
     g = transcript_state['goal']
     return nil unless g.is_a?(Hash)
 
-    text = word_label(g['condition'])
+    text = word_label(four_word_label(g['condition']))
     return nil if text.empty?
 
     colorize("\u{25CE}goal:#{text}", :messages)
@@ -479,7 +479,7 @@ class ClaudeStatusLine
         state['loop'] = {
           'active' => true,
           'interval' => format_interval(input['delaySeconds']),
-          'goal' => three_word_label(task)
+          'goal' => four_word_label(task)
         }
       end
     end
@@ -513,7 +513,7 @@ class ClaudeStatusLine
     entry = {
       'id' => job_id,
       'cron' => input['cron'],
-      'label' => three_word_label(input['prompt']),
+      'label' => four_word_label(input['prompt']),
       'oneShot' => one_shot,
       'loop' => !one_shot && state['loop_cmd'] == true
     }
@@ -573,8 +573,8 @@ class ClaudeStatusLine
     text.to_s.gsub(/\s+/, ' ').strip.split(' ').first(2).join(' ')
   end
 
-  def three_word_label(text)
-    text.to_s.gsub(/\s+/, ' ').strip.split(' ').first(3).join(' ')
+  def four_word_label(text)
+    text.to_s.gsub(/\s+/, ' ').strip.split(' ').first(4).join(' ')
   end
 
   # Line-3 labels read as words, never as a chopped one: take whole words up to

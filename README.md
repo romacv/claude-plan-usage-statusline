@@ -36,7 +36,7 @@ Every label on lines 3 and 4 is cut on whole words, never mid-word, and ends in 
 
 ## Goal
 
-- `◎goal:ship the release` -- the session's active `/goal`, first three words of its condition
+- `◎goal:ship the release` -- the session's active `/goal`, first four words of its condition
 
 Claude Code records a goal as a `goal_status` attachment in the transcript; the segment shows the open condition and disappears once the goal is met or cleared.
 
