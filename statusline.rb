@@ -156,6 +156,15 @@ class ClaudeStatusLine
   # — see the transcript scanning section below. `loop_data` prefers an
   # explicit ScheduleWakeup-driven loop; absent that, a live cron implies an
   # interval loop pacing itself, using the newest cron's schedule/label.
+  def dated_cron?(cron)
+    fields = sanitize(cron).split(/\s+/)
+    return false unless fields.length == 5
+
+    fields[2] != '*' || fields[3] != '*'
+  rescue StandardError
+    false
+  end
+
   def loops_data
     state = transcript_state
     loops = []
@@ -164,6 +173,9 @@ class ClaudeStatusLine
 
     crons = state['crons']
     live = crons.is_a?(Hash) ? crons.values.select { |c| c.is_a?(Hash) && !c['oneShot'] && !cron_stale?(c) } : []
+    # A job pinned to one day and month fires once whatever its `recurring`
+    # flag says, so it never stands in for a loop.
+    live = live.reject { |c| dated_cron?(c['cron']) }
     tagged = live.select { |c| c['loop'] }
 
     # Nothing tagged and no wakeup: an interval loop still paces this session,
@@ -684,8 +696,19 @@ class ClaudeStatusLine
 
   # What kind of job it is, so a clock alone never has to carry the meaning:
   # "once" for a one-shot, otherwise how often it repeats.
+  # A job pinned to a day and month fires at one moment, whether or not it was
+  # flagged recurring — show that moment rather than the raw expression.
+  def dated_clock(cron)
+    return nil unless dated_cron?(cron)
+
+    iso = one_shot_next(cron, nil)
+    iso && cron_next_clock(iso)
+  rescue StandardError
+    nil
+  end
+
   def cron_cadence(entry)
-    return 'once' if entry['oneShot']
+    return 'once' if entry['oneShot'] || dated_cron?(entry['cron'])
 
     human_cron_interval(entry['cron'])
   end
@@ -694,7 +717,8 @@ class ClaudeStatusLine
     label = resume_cron?(entry) ? 'resume' : word_label(entry['label'])
     label = 'cron' if label.empty?
     clock = (entry['next'] && cron_next_clock(entry['next'])) ||
-            next_recurring_clock(entry['cron']) || short_cron(entry['cron'])
+            next_recurring_clock(entry['cron']) ||
+            dated_clock(entry['cron']) || short_cron(entry['cron'])
     "#{clock} (#{cron_cadence(entry)}) #{label}".strip
   end
 
