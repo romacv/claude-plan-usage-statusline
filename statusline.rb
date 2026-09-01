@@ -602,11 +602,29 @@ class ClaudeStatusLine
   end
 
   def cron_stale?(entry)
+    # A date-pinned job fires at one moment and Claude Code deletes it without
+    # a trace, so once that moment is past the entry is a ghost — whatever its
+    # `recurring` flag claimed. Never roll it into next year: that would keep a
+    # job that already fired on the line for another twelve months.
+    dated = dated_time(entry['cron'])
+    return true if dated && dated < Time.now
     return false unless entry['oneShot'] && entry['next']
 
     Time.parse(entry['next']) < Time.now
   rescue StandardError
     false
+  end
+
+  def dated_time(cron)
+    return nil unless dated_cron?(cron)
+
+    minute, hour, dom, month, = sanitize(cron).split(/\s+/)
+    return nil unless [minute, hour, dom, month].all? { |f| f.match?(/\A\d+\z/) }
+
+    now = Time.now.localtime
+    Time.new(now.year, month.to_i, dom.to_i, hour.to_i, minute.to_i, 0, now.utc_offset)
+  rescue StandardError
+    nil
   end
 
   def cron_sort_key(entry)
@@ -701,8 +719,8 @@ class ClaudeStatusLine
   def dated_clock(cron)
     return nil unless dated_cron?(cron)
 
-    iso = one_shot_next(cron, nil)
-    iso && cron_next_clock(iso)
+    t = dated_time(cron)
+    t && format_local_clock(t)
   rescue StandardError
     nil
   end
