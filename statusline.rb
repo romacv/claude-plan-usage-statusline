@@ -45,11 +45,9 @@ class ClaudeStatusLine
   CACHE_TTL = 600
   BACKOFF_FILE = '/tmp/claude_usage_backoff'
   STALE_DISPLAY_MAX = 21_600
-  LOOP_GOAL_MAX = 22
+  LABEL_MAX = 20
   USAGE_GUARD_DIR = File.join(Dir.home, '.claude', 'usage-guard')
   TRANSCRIPT_CACHE_DIR = File.join(Dir.home, '.claude', 'cache')
-  CRON_DISPLAY_MAX = 3
-  CRON_LABEL_MAX = 22
   # Hide a stand-down badge whose wake time is this many seconds past — the
   # resume cron may re-schedule ~5 min on a not-yet-reset window without
   # touching the marker, so keep the badge honest through the normal resume
@@ -64,18 +62,18 @@ class ClaudeStatusLine
   MIDDLE_TRUNCATE_MARKER = '....'
 
   COLORS = {
-    directory: "\033[38;5;110m",
-    model: "\033[38;5;133m",
-    tokens: "\033[38;5;66m",
-    ctx_warn: "\033[38;5;214m",
-    ctx_alert: "\033[38;5;196m",
-    plan: "\033[38;5;73m",
-    messages: "\033[38;5;107m",
-    time: "\033[38;5;178m",
-    worktree: "\033[38;5;180m",
-    git_clean: "\033[38;5;96m",
-    git_dirty: "\033[38;5;167m",
-    loop: "\033[38;5;114m",
+    directory: "\e[38;5;32m",
+    model: "\e[38;5;91m",
+    tokens: "\e[38;5;30m",
+    ctx_warn: "\e[38;5;172m",
+    ctx_alert: "\e[38;5;160m",
+    plan: "\e[38;5;31m",
+    messages: "\e[38;5;64m",
+    time: "\e[38;5;136m",
+    worktree: "\e[38;5;137m",
+    git_clean: "\e[38;5;60m",
+    git_dirty: "\e[38;5;131m",
+    loop: "\e[38;5;35m",
     gray: "\033[90m",
     reset: "\033[0m"
   }.freeze
@@ -101,6 +99,7 @@ class ClaudeStatusLine
     model_segment += colorize("\u{2726}#{@effort_level}", :plan) if @effort_level
 
     line1_parts = [
+      pause_segment,
       model_segment,
       context_segment(usage[:context]),
       usage_segment(usage[:session], usage[:session_pct], usage[:reset_time], usage[:stale]),
@@ -111,14 +110,16 @@ class ClaudeStatusLine
     line2_parts = [
       colorize(short_path, :directory),
       (colorize("\u{2442}#{git[:worktree]}", :worktree) if git[:worktree]),
-      colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color]),
-      loop_segment,
-      pause_segment,
-      cron_segment
+      colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color])
     ].compact
     line2 = line2_parts.join(" #{sep} ")
 
-    "#{line1}\n#{line2}"
+    line3_parts = [goal_segment, loop_segment].compact
+    lines = [line1, line2]
+    lines << line3_parts.join(" #{sep} ") unless line3_parts.empty?
+    crons = cron_segment
+    lines << crons if crons
+    lines.join("\n")
   end
 
   private
@@ -155,54 +156,70 @@ class ClaudeStatusLine
   # — see the transcript scanning section below. `loop_data` prefers an
   # explicit ScheduleWakeup-driven loop; absent that, a live cron implies an
   # interval loop pacing itself, using the newest cron's schedule/label.
-  def loop_data
+  def loops_data
     state = transcript_state
+    loops = []
     active = state['loop']
-    return active if active.is_a?(Hash) && active['active']
+    loops << active if active.is_a?(Hash) && active['active']
 
     crons = state['crons']
-    return nil unless crons.is_a?(Hash) && !crons.empty?
+    live = crons.is_a?(Hash) ? crons.values.select { |c| c.is_a?(Hash) && !c['oneShot'] && !cron_stale?(c) } : []
+    tagged = live.select { |c| c['loop'] }
 
-    qualifying = crons.values.select { |c| c.is_a?(Hash) && !c['oneShot'] && !cron_stale?(c) }
-    return nil if qualifying.empty?
+    # Nothing tagged and no wakeup: an interval loop still paces this session,
+    # so read it off the newest recurring cron the way we always have.
+    tagged = [live.last].compact if tagged.empty? && loops.empty?
 
-    newest = qualifying.last
-    return nil unless newest.is_a?(Hash)
-
-    {
-      'active' => true,
-      'interval' => human_cron_interval(newest['cron']),
-      'goal' => newest['label'],
-      '_source_cron_id' => newest['id']
-    }
+    tagged.each do |c|
+      loops << {
+        'active' => true,
+        'interval' => human_cron_interval(c['cron']),
+        'goal' => c['label'],
+        '_source_cron_id' => c['id']
+      }
+    end
+    loops
   rescue StandardError
-    nil
+    []
   end
 
   # The cron id backing the loop when it was derived from the fallback path
   # (no ScheduleWakeup in the transcript) — used by cron_segment to suppress
   # that cron from its own listing so it isn't shown twice. nil when the
   # loop came from ScheduleWakeup or there is no loop.
-  def loop_backing_cron_id
-    data = loop_data
-    return nil unless data.is_a?(Hash)
+  def loop_backing_cron_ids
+    ids = loops_data.map { |l| l['_source_cron_id'] }.compact
+    ids
+  rescue StandardError
+    []
+  end
 
-    data['_source_cron_id']
+  # The session's own /goal, first three words of the condition.
+  def goal_segment
+    g = transcript_state['goal']
+    return nil unless g.is_a?(Hash)
+
+    text = word_label(g['condition'])
+    return nil if text.empty?
+
+    colorize("\u{25CE}goal:#{text}", :messages)
   rescue StandardError
     nil
   end
 
   def loop_segment
-    data = loop_data
-    return colorize("\u{27F3}loop:off", :gray) unless data
+    loops = loops_data
+    return nil if loops.empty?
 
-    interval = data['interval'].to_s
-    goal = sanitize(data['goal']).gsub(/\s+/, ' ').strip
-    goal = "#{goal[0, LOOP_GOAL_MAX]}\u{2026}" if goal.length > LOOP_GOAL_MAX + 1
-    parts = []
-    parts << "loop:#{interval}" unless interval.empty?
-    parts << "goal:#{goal}" unless goal.empty?
-    colorize("\u{27F3}#{parts.join(' ')}", :loop)
+    entries = loops.map do |l|
+      [l['interval'].to_s, word_label(l['goal'])].reject(&:empty?).join(' ')
+    end.reject(&:empty?)
+    return nil if entries.empty?
+
+    # Count what is actually drawn, not what was collected — an entry that
+    # rendered empty must not push the label to the plural.
+    name = entries.size > 1 ? 'loops' : 'loop'
+    colorize("\u{27F3}#{name}:#{entries.join(" \u{00B7} ")}", :loop)
   end
 
   def standdown_data
@@ -237,8 +254,8 @@ class ClaudeStatusLine
 
     by = pause_source(data)
     clock = format_wake_clock(data['wake_at_epoch'])
-    text = "\u{23F8}paused by #{by}"
-    text += ", resume #{clock}" if clock
+    text = "\u{23F8}paused"
+    text += " to #{clock}" if clock
     colorize(text, :ctx_alert)
   end
 
@@ -286,13 +303,16 @@ class ClaudeStatusLine
   # so the byte offset already scanned plus the derived state are cached per
   # session at TRANSCRIPT_CACHE_DIR/statusline-session-<sid>.json. A shrunk
   # or rotated transcript (cache size > current size) forces a full rescan.
+  # Deleting the cache file forces one too, which is how a job created before
+  # a scanning change (a /loop cron predating the loop tag) gets classified
+  # correctly without being recreated.
 
   def transcript_state
     @transcript_state ||= compute_transcript_state
   end
 
   def default_transcript_state
-    { 'crons' => {}, 'loop' => nil, 'pending' => {} }
+    { 'crons' => {}, 'loop' => nil, 'pending' => {}, 'goal' => nil }
   end
 
   def compute_transcript_state
@@ -390,7 +410,28 @@ class ClaudeStatusLine
     return unless d.is_a?(Hash)
     return if d['isSidechain']
 
-    content = d.dig('message', 'content')
+    # A /goal writes a `goal_status` attachment: sentinel/met:false when the
+    # goal is set or still open, met:true once it is satisfied and cleared.
+    att = d['attachment']
+    if att.is_a?(Hash) && att['type'] == 'goal_status'
+      if att['met']
+        state['goal'] = nil
+      else
+        prev = state['goal']
+        set_at = (prev.is_a?(Hash) && prev['condition'] == att['condition'] && prev['set_at']) || d['timestamp']
+        state['goal'] = { 'condition' => att['condition'].to_s, 'set_at' => set_at }
+      end
+    end
+
+    # `/loop <interval> <prompt>` schedules an ordinary cron with no trace of
+    # its origin in the CronCreate call, so the command message itself is what
+    # marks the next created job as a loop.
+    raw = d.dig('message', 'content')
+    if raw.is_a?(String) && raw.include?('<command-name>/loop</command-name>')
+      state['loop_cmd'] = true
+    end
+
+    content = raw
     return unless content.is_a?(Array)
 
     content.each do |block|
@@ -400,7 +441,7 @@ class ClaudeStatusLine
       when 'tool_use'
         process_tool_use(block, pending, crons, state)
       when 'tool_result'
-        process_tool_result(block, pending, crons, d['timestamp'])
+        process_tool_result(block, pending, crons, d['timestamp'], state)
       end
     end
   rescue StandardError
@@ -419,10 +460,14 @@ class ClaudeStatusLine
       if input['stop']
         state['loop'] = nil
       else
+        # The loop's own task (the /loop prompt) names it better than the
+        # wakeup's pacing `reason`, which only explains the delay.
+        task = input['prompt'].to_s.sub(%r{\A/loop\s+}, '')
+        task = input['reason'] if task.strip.empty?
         state['loop'] = {
           'active' => true,
           'interval' => format_interval(input['delaySeconds']),
-          'goal' => two_word_label(input['reason'])
+          'goal' => three_word_label(task)
         }
       end
     end
@@ -439,7 +484,7 @@ class ClaudeStatusLine
   # "Scheduled one-shot task <id> (...)".
   CRON_CONFIRMATION = /\bScheduled (recurring job|one-shot task) ([0-9a-f]{6,})\b/
 
-  def process_tool_result(block, pending, crons, timestamp)
+  def process_tool_result(block, pending, crons, timestamp, state = {})
     tid = block['tool_use_id']
     return unless tid
 
@@ -456,9 +501,11 @@ class ClaudeStatusLine
     entry = {
       'id' => job_id,
       'cron' => input['cron'],
-      'label' => two_word_label(input['prompt']),
-      'oneShot' => one_shot
+      'label' => three_word_label(input['prompt']),
+      'oneShot' => one_shot,
+      'loop' => !one_shot && state['loop_cmd'] == true
     }
+    state['loop_cmd'] = false
     entry['next'] = one_shot_next(input['cron'], timestamp) if one_shot
 
     crons[job_id] = entry
@@ -514,11 +561,32 @@ class ClaudeStatusLine
     text.to_s.gsub(/\s+/, ' ').strip.split(' ').first(2).join(' ')
   end
 
+  def three_word_label(text)
+    text.to_s.gsub(/\s+/, ' ').strip.split(' ').first(3).join(' ')
+  end
+
+  # Line-3 labels read as words, never as a chopped one: take whole words up to
+  # LABEL_MAX characters and mark the cut with an ellipsis only when something
+  # was actually dropped.
+  def word_label(text, limit = LABEL_MAX)
+    words = sanitize(text).gsub(/\s+/, ' ').strip.split(' ')
+    return '' if words.empty?
+
+    out = words.shift
+    while (w = words.first) && (out.length + 1 + w.length) <= limit
+      out = "#{out} #{words.shift}"
+    end
+    out = out[0, limit] if out.length > limit
+    words.empty? ? out : "#{out}\u{2026}"
+  end
+
   def format_interval(delay_seconds)
     seconds = delay_seconds.to_i
-    return "#{seconds}s" if seconds <= 0 || seconds % 60 != 0
+    return "#{seconds}s" if seconds <= 0
+    return "#{seconds}s" if seconds < 60
 
-    "#{seconds / 60}m"
+    # Round to whole minutes: a 2300s wakeup reads as 38m, not 2300s.
+    "#{(seconds / 60.0).round}m"
   end
 
   def cron_stale?(entry)
@@ -530,7 +598,7 @@ class ClaudeStatusLine
   end
 
   def cron_sort_key(entry)
-    return Float::INFINITY unless entry['next']
+    return next_recurring_time(entry['cron'])&.to_f || Float::INFINITY unless entry['next']
 
     Time.parse(entry['next']).to_f
   rescue StandardError
@@ -539,6 +607,44 @@ class ClaudeStatusLine
 
   def cron_next_clock(next_str)
     format_local_clock(Time.parse(next_str).localtime)
+  rescue StandardError
+    nil
+  end
+
+  # Wall-clock of a recurring cron's next fire, so the badge reads "@17:37"
+  # instead of the cron's own shorthand ":37" — the same thing a one-shot
+  # already shows via `next`. Covers the three shapes /loop produces; anything
+  # else falls back to short_cron.
+  def next_recurring_clock(cron)
+    t = next_recurring_time(cron)
+    t && format_local_clock(t)
+  end
+
+  def next_recurring_time(cron)
+    fields = sanitize(cron).split(/\s+/)
+    return nil unless fields.length == 5
+
+    minute, hour, dom, month, dow = fields
+    return nil unless dom == '*' && month == '*' && dow == '*'
+
+    now = Time.now.localtime
+    if (m = minute.match(/\A\*\/(\d+)\z/)) && hour == '*'
+      step = m[1].to_i
+      return nil unless step.positive?
+
+      nxt = ((now.min / step) + 1) * step
+      t = Time.new(now.year, now.month, now.day, now.hour, 0, 0, now.utc_offset) + nxt * 60
+    elsif minute.match?(/\A\d{1,2}\z/) && hour == '*'
+      t = Time.new(now.year, now.month, now.day, now.hour, minute.to_i, 0, now.utc_offset)
+      t += 3600 if t <= now
+    elsif minute.match?(/\A\d{1,2}\z/) && hour.match?(/\A\d{1,2}\z/)
+      t = Time.new(now.year, now.month, now.day, hour.to_i, minute.to_i, 0, now.utc_offset)
+      t += 86_400 if t <= now
+    else
+      return nil
+    end
+
+    t
   rescue StandardError
     nil
   end
@@ -566,35 +672,61 @@ class ClaudeStatusLine
     return '1h' if sanitized.match?(/\A\d{1,2} \* \* \* \*\z/)
     return '1d' if sanitized.match?(/\A\d{1,2} \d{1,2} \* \* \*\z/)
 
+    # A dated one-off (minute hour day month *) has no period at all: show the
+    # clock it fires at rather than leaking the raw five-field expression.
+    m = sanitized.match(/\A(\d{1,2}) (\d{1,2}) \d{1,2} \d{1,2} \*\z/)
+    return format('%02d:%02d', m[2].to_i, m[1].to_i) if m
+
     short_cron(sanitized)
   rescue StandardError
     short_cron(cron)
   end
 
+  # What kind of job it is, so a clock alone never has to carry the meaning:
+  # "once" for a one-shot, otherwise how often it repeats.
+  def cron_cadence(entry)
+    return 'once' if entry['oneShot']
+
+    human_cron_interval(entry['cron'])
+  end
+
   def cron_entry_text(entry)
-    label = sanitize(entry['label']).gsub(/\s+/, ' ').strip
+    label = resume_cron?(entry) ? 'resume' : word_label(entry['label'])
     label = 'cron' if label.empty?
-    label = "#{label[0, CRON_LABEL_MAX]}\u{2026}" if label.length > CRON_LABEL_MAX + 1
-    prefix = (entry['next'] && cron_next_clock(entry['next'])) || short_cron(entry['cron'])
-    "#{prefix} #{label}".strip
+    clock = (entry['next'] && cron_next_clock(entry['next'])) ||
+            next_recurring_clock(entry['cron']) || short_cron(entry['cron'])
+    "#{clock} (#{cron_cadence(entry)}) #{label}".strip
+  end
+
+  # The stand-down's own resume cron is already spelled out by the pause badge
+  # ("⏸5h→21:11"); listing it again as "@21:12 Invoke the" says nothing new.
+  # Match it by fire time rather than by id, which the marker doesn't carry.
+  def resume_cron?(entry)
+    marker = standdown_data
+    return false unless marker
+
+    wake = marker['wake_at_epoch'].to_i
+    return false unless wake.positive? && entry['next']
+
+    (Time.parse(entry['next']).to_i - wake).abs <= 600
+  rescue StandardError
+    false
   end
 
   def cron_segment
     data = crons_data
     return nil unless data
 
-    backing_id = loop_backing_cron_id
+    backing_ids = loop_backing_cron_ids
     active = data.select { |e| e.is_a?(Hash) }
                  .reject { |e| cron_stale?(e) }
-                 .reject { |e| backing_id && e['id'] == backing_id }
+                 .reject { |e| backing_ids.include?(e['id']) }
                  .sort_by { |e| cron_sort_key(e) }
     return nil if active.empty?
 
-    shown = active.first(CRON_DISPLAY_MAX).map { |e| cron_entry_text(e) }
-    extra = active.size - shown.size
-    text = shown.join(" \u{00B7} ")
-    text += " +#{extra}" if extra > 0
-    colorize("@#{text}", :time)
+    entries = active.map { |e| cron_entry_text(e) }
+    name = entries.size > 1 ? 'crons' : 'cron'
+    colorize("\u{25F7}#{name}:#{entries.join(" \u{00B7} ")}", :time)
   rescue StandardError
     nil
   end
