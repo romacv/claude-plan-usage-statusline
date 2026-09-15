@@ -74,6 +74,7 @@ class ClaudeStatusLine
     git_clean: "\e[38;5;60m",
     git_dirty: "\e[38;5;131m",
     loop: "\e[38;5;35m",
+    custom: "\e[38;5;44m",
     gray: "\033[90m",
     reset: "\033[0m"
   }.freeze
@@ -95,7 +96,16 @@ class ClaudeStatusLine
     sep = "#{@colors[:gray]}|#{@colors[:reset]}"
     usage = calculate_usage
     git = git_data
-    model_segment = colorize("\u{25C6}#{@model_name}", :model)
+    detection = model_detection
+    model_segment = if detection[:kind] == :custom
+      # A non-Claude model served this session: show the id Claude Code
+      # reports rather than a display name that may say otherwise, and mark
+      # it — the plan-usage windows beside it describe the Claude plan, not
+      # what this session consumes.
+      colorize("\u{25C6}#{middle_truncate(sanitize(detection[:id]).strip)}\u{00B7}custom", :custom)
+    else
+      colorize("\u{25C6}#{@model_name}", :model)
+    end
     model_segment += colorize("\u{2726}#{@effort_level}", :plan) if @effort_level
 
     line1_parts = [
@@ -134,6 +144,51 @@ class ClaudeStatusLine
   # its own escape sequences. Apply to the DATA, never to colorized output.
   def sanitize(text)
     text.to_s.gsub(/[\u0000-\u001f\u007f]/, '')
+  end
+
+  # Native or custom model. Claude Code pipes model.id alongside display_name;
+  # when that is absent (older builds), fall back to this session's transcript
+  # — the most recent non-sidechain assistant entry names the model that
+  # served it. /^claude-/i is native, anything else is a custom/proxied model,
+  # unreadable is unknown and renders exactly as before.
+  def model_detection
+    return @model_detection if defined?(@model_detection)
+
+    id = @input_data.dig('model', 'id').to_s.strip
+    id = transcript_model_id if id.empty?
+    return { kind: :unknown, id: '' } if id.empty?
+
+    { kind: (id.match?(/\Aclaude-/i) ? :native : :custom), id: id }
+  rescue StandardError
+    { kind: :unknown, id: '' }
+  end
+
+  def transcript_model_id
+    path = @transcript_path
+    return nil unless path.is_a?(String) && File.exist?(path)
+
+    scan = lambda do |lines|
+      lines.reverse_each do |line|
+        d = (JSON.parse(line) rescue nil)
+        next unless d.is_a?(Hash)
+        next if d['isSidechain']
+        m = d['message']
+        next unless m.is_a?(Hash)
+        mid = m['model']
+        return mid if mid.is_a?(String) && !mid.strip.empty?
+      end
+      nil
+    end
+
+    size = File.size(path)
+    if size > 65_536
+      tail = File.open(path, 'rb') { |f| f.seek(size - 65_536); f.read.to_s.lines }
+      scan.(tail) || scan.(File.readlines(path))
+    else
+      scan.(File.readlines(path))
+    end
+  rescue StandardError
+    nil
   end
 
   def context_segment(text)

@@ -13,6 +13,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 ## Features
 
 - **Model** -- current model name (long-context suffix compacted, e.g. `(1M context)` becomes `·1M`)
+- **Custom model** -- when the session runs on a non-Claude model (an id that is not `claude-*`, read from the stdin payload or, absent that, the transcript), the model segment shows that id in cyan with a `·custom` suffix, since the 5h/1w windows beside it track the Claude plan, not what this session consumes
 - **Effort** -- current effort level appended to the model segment (when set via `/effort`)
 - **Context window** -- remaining % from Claude Code's input, color-graded
 - **5h usage** -- session headroom with countdown to reset, color-graded (amber at 35% left, red at 15% left); shows `?` when usage data is unavailable instead of a misleading 100%
