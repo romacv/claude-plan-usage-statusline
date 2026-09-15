@@ -45,10 +45,10 @@ Claude Code records a goal as a `goal_status` attachment in the transcript; the 
 
 The status bar shows every loop pacing this session and the task each one runs:
 
-- `⟳loop:20m Poll the Slack` -- one loop: its interval and the first words of its task
-- `⟳loops:20m Poll the Slack · 1h check my tasks` -- several loops, separated by ` · `
+- `⟳loop:20m@16:47 Poll the Slack` -- one loop: its interval, the clock of its next fire when that is computable, and the first words of its task
+- `⟳loops:20m@16:47 Poll the Slack · 1h@17:07 check my tasks` -- several loops, separated by ` · `
 
-Nothing is shown when no loop is active. Two kinds count as loops: a self-paced `ScheduleWakeup` (interval from `delaySeconds`, task from its `prompt`), and a cron created by `/loop` -- the `/loop` command message in the transcript marks the job it schedules, so an interval loop is not mistaken for an ordinary cron. Absent both, a lone recurring cron is still read as the loop pacing the session.
+Nothing is shown when no loop is active. Two kinds count as loops: a self-paced `ScheduleWakeup` (interval from `delaySeconds`, task from its `prompt`), and a cron created by `/loop` -- the `/loop` command message in the transcript marks the job it schedules, so an interval loop is not mistaken for an ordinary cron. Absent both, a lone recurring cron is still read as the loop pacing the session. The `@clock` after the interval is the next fire -- read off the cron's schedule, or off a wakeup's scheduling time plus its delay -- and an already-past moment (a wakeup that fired but has not rescheduled yet) renders as the bare interval.
 
 There is no registry file and nothing to write; see [How loop and cron are derived](#how-loop-and-cron-are-derived).
 

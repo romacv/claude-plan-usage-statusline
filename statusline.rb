@@ -245,6 +245,7 @@ class ClaudeStatusLine
         'active' => true,
         'interval' => human_cron_interval(c['cron']),
         'goal' => c['label'],
+        'next' => next_recurring_time(c['cron'])&.iso8601,
         '_source_cron_id' => c['id']
       }
     end
@@ -282,7 +283,7 @@ class ClaudeStatusLine
     return nil if loops.empty?
 
     entries = loops.map do |l|
-      [l['interval'].to_s, word_label(l['goal'])].reject(&:empty?).join(' ')
+      [loop_cadence(l), word_label(l['goal'])].reject(&:empty?).join(' ')
     end.reject(&:empty?)
     return nil if entries.empty?
 
@@ -290,6 +291,17 @@ class ClaudeStatusLine
     # rendered empty must not push the label to the plural.
     name = entries.size > 1 ? 'loops' : 'loop'
     colorize("\u{27F3}#{name}:#{entries.join(" \u{00B7} ")}", :loop)
+  end
+
+  # The interval plus, when the next fire is computable, the clock it lands
+  # on: "1h@17:07" for a cron-backed loop, "20m@16:47" for a self-paced
+  # wakeup. An already-past moment (a wakeup that fired but has not
+  # rescheduled yet) renders as the bare interval.
+  def loop_cadence(loop)
+    t = loop['next'] ? (Time.parse(loop['next'].to_s) rescue nil) : nil
+    return loop['interval'].to_s unless t && t > Time.now
+
+    "#{loop['interval']}@#{format_local_clock(t)}"
   end
 
   def standdown_data
@@ -509,7 +521,7 @@ class ClaudeStatusLine
 
       case block['type']
       when 'tool_use'
-        process_tool_use(block, pending, crons, state)
+        process_tool_use(block, pending, crons, state, d['timestamp'])
       when 'tool_result'
         process_tool_result(block, pending, crons, d['timestamp'], state)
       end
@@ -518,7 +530,7 @@ class ClaudeStatusLine
     nil
   end
 
-  def process_tool_use(block, pending, crons, state)
+  def process_tool_use(block, pending, crons, state, timestamp = nil)
     case block['name']
     when 'CronCreate'
       pending[block['id']] = block['input'] if block['id'] && block['input'].is_a?(Hash)
@@ -537,10 +549,21 @@ class ClaudeStatusLine
         state['loop'] = {
           'active' => true,
           'interval' => format_interval(input['delaySeconds']),
-          'goal' => four_word_label(task)
+          'goal' => four_word_label(task),
+          # The recorded call IS the pending next fire: the runtime wakes the
+          # loop delaySeconds after it was scheduled.
+          'next' => wakeup_next(timestamp, input['delaySeconds'])
         }
       end
     end
+  rescue StandardError
+    nil
+  end
+
+  def wakeup_next(timestamp, delay_seconds)
+    return nil if timestamp.nil? || delay_seconds.to_i <= 0
+
+    (Time.parse(timestamp).localtime + delay_seconds.to_i).iso8601
   rescue StandardError
     nil
   end
