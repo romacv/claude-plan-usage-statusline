@@ -97,7 +97,8 @@ class ClaudeStatusLine
     usage = calculate_usage
     git = git_data
     detection = model_detection
-    model_segment = if detection[:kind] == :custom
+    custom_model = detection[:kind] == :custom
+    model_segment = if custom_model
       # A non-Claude model served this session: show the id Claude Code
       # reports rather than a display name that may say otherwise, and mark
       # it — the plan-usage windows beside it describe the Claude plan, not
@@ -112,8 +113,10 @@ class ClaudeStatusLine
       pause_segment,
       model_segment,
       context_segment(usage[:context]),
-      usage_segment(usage[:session], usage[:session_pct], usage[:reset_time], usage[:stale]),
-      usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time], usage[:stale])
+      # The 5h/1w windows are the Claude plan's, so on a custom model they
+      # say nothing about this session — drop both segments entirely.
+      (usage_segment(usage[:session], usage[:session_pct], usage[:reset_time], usage[:stale]) unless custom_model),
+      (usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time], usage[:stale]) unless custom_model)
     ].compact
     line1 = line1_parts.join(" #{sep} ")
 

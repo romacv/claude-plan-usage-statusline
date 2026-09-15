@@ -13,7 +13,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 ## Features
 
 - **Model** -- current model name (long-context suffix compacted, e.g. `(1M context)` becomes `·1M`)
-- **Custom model** -- when the session runs on a non-Claude model (an id that is not `claude-*`, read from the stdin payload or, absent that, the transcript), the model segment shows that id in cyan with a `·custom` suffix, since the 5h/1w windows beside it track the Claude plan, not what this session consumes
+- **Custom model** -- when the session runs on a non-Claude model (an id that is not `claude-*`, read from the stdin payload or, absent that, the transcript), the model segment shows that id in cyan with a `·custom` suffix, and the 5h/1w plan windows are dropped entirely -- they track the Claude plan, not what this session consumes
 - **Effort** -- current effort level appended to the model segment (when set via `/effort`)
 - **Context window** -- remaining % from Claude Code's input, color-graded
 - **5h usage** -- session headroom with countdown to reset, color-graded (amber at 35% left, red at 15% left); shows `?` when usage data is unavailable instead of a misleading 100%
@@ -28,7 +28,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 
 Up to four lines, each dropped entirely when it has nothing to say:
 
-1. pause badge (only while paused), model, effort, context, 5h and 1w usage
+1. pause badge (only while paused), model, effort, context, and 5h/1w usage (both dropped on a custom model)
 2. path, worktree, branch
 3. goal, loops
 4. crons
