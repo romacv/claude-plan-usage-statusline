@@ -929,13 +929,14 @@ class ClaudeStatusLine
       entry = entries.shift
       entries.shift if entry.match?(/^[RC]/)
       name = File.basename(sanitize(entry[3..]), '.*')
-      files << (name.length > CHANGED_FILE_NAME_LIMIT ? "#{name[0, CHANGED_FILE_NAME_LIMIT]}\u{2026}" : name)
+      name = "#{name[0, CHANGED_FILE_NAME_LIMIT]}\u{2026}" if name.length > CHANGED_FILE_NAME_LIMIT
+      files << [entry[0, 2].strip, name]
     end
     return nil if files.empty?
 
-    shown = files.first(CHANGED_FILES_SHOWN)
-    shown << "+#{files.size - shown.size}" if files.size > shown.size
-    shown.join(', ')
+    groups = files.first(CHANGED_FILES_SHOWN).group_by(&:first).map { |mark, group| "#{mark}(#{group.map(&:last).join(', ')})" }
+    groups << "+#{files.size - CHANGED_FILES_SHOWN}" if files.size > CHANGED_FILES_SHOWN
+    groups.join(' ')
   end
 
   def build_git_indicators
