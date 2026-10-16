@@ -29,7 +29,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 Up to four lines, each dropped entirely when it has nothing to say:
 
 1. pause badge (only while paused), model, effort, context, and 5h/1w usage (both dropped on a custom model)
-2. path, worktree, branch, changed files (status mark and path, first four, then `+N`)
+2. path, worktree, branch, changed files (names without extensions, comma-separated, first four, then `+N`)
 3. goal, loops
 4. crons
 

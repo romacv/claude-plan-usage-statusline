@@ -61,6 +61,7 @@ class ClaudeStatusLine
   MIDDLE_TRUNCATE_TAIL = 8
   MIDDLE_TRUNCATE_MARKER = '....'
   CHANGED_FILES_SHOWN = 4
+  CHANGED_FILE_NAME_LIMIT = 12
 
   COLORS = {
     directory: "\e[38;5;32m",
@@ -927,13 +928,14 @@ class ClaudeStatusLine
     until entries.empty?
       entry = entries.shift
       entries.shift if entry.match?(/^[RC]/)
-      files << "#{entry[0, 2].strip} #{middle_truncate(sanitize(entry[3..]))}"
+      name = File.basename(sanitize(entry[3..]), '.*')
+      files << (name.length > CHANGED_FILE_NAME_LIMIT ? "#{name[0, CHANGED_FILE_NAME_LIMIT]}\u{2026}" : name)
     end
     return nil if files.empty?
 
     shown = files.first(CHANGED_FILES_SHOWN)
     shown << "+#{files.size - shown.size}" if files.size > shown.size
-    shown.join(" \u{00B7} ")
+    shown.join(', ')
   end
 
   def build_git_indicators
