@@ -21,7 +21,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 - **Goal** -- the session's active `/goal`, when one is set (see [Goal](#goal))
 - **Loop status** -- every loop pacing this session and what it works on, derived from its own transcript (see [Loop Status](#loop-status))
 - **Cron display** -- this session's other scheduled jobs, with next fire time and cadence (see [Cron Display](#cron-display))
-- **Git** -- branch, worktree (when in a git worktree), staged/modified counts, ahead/behind
+- **Git** -- branch, worktree (when in a git worktree), staged/modified counts, ahead/behind, and the changed files themselves
 - **Live refresh** -- the primary stdin reading writes through to the cache on every render; the API fallback is also refreshed automatically after each agent response via Claude Code `Stop` hook, with 900-second debounce
 
 ## Layout
@@ -29,7 +29,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 Up to four lines, each dropped entirely when it has nothing to say:
 
 1. pause badge (only while paused), model, effort, context, and 5h/1w usage (both dropped on a custom model)
-2. path, worktree, branch
+2. path, worktree, branch, changed files (status mark and path, first four, then `+N`)
 3. goal, loops
 4. crons
 

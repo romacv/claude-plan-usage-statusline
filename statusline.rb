@@ -60,6 +60,7 @@ class ClaudeStatusLine
   MIDDLE_TRUNCATE_HEAD = 11
   MIDDLE_TRUNCATE_TAIL = 8
   MIDDLE_TRUNCATE_MARKER = '....'
+  CHANGED_FILES_SHOWN = 4
 
   COLORS = {
     directory: "\e[38;5;32m",
@@ -123,7 +124,8 @@ class ClaudeStatusLine
     line2_parts = [
       colorize(short_path, :directory),
       (colorize("\u{2442}#{git[:worktree]}", :worktree) if git[:worktree]),
-      colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color])
+      colorize("\u{2325}#{git[:branch]}#{git[:indicators]}", git[:color]),
+      (colorize(git[:files], :git_dirty) if git[:files])
     ].compact
     line2 = line2_parts.join(" #{sep} ")
 
@@ -889,7 +891,7 @@ class ClaudeStatusLine
   end
 
   def git_data
-    default = { worktree: nil, branch: '', indicators: '', color: :git_clean }
+    default = { worktree: nil, branch: '', indicators: '', color: :git_clean, files: nil }
     return default unless @current_dir && File.exist?(File.join(@current_dir, '.git'))
 
     Dir.chdir(@current_dir) do
@@ -907,7 +909,7 @@ class ClaudeStatusLine
       indicators = build_git_indicators
       color = indicators.empty? ? :git_clean : :git_dirty
 
-      { worktree: worktree, branch: middle_truncate(branch), indicators: indicators, color: color }
+      { worktree: worktree, branch: middle_truncate(branch), indicators: indicators, color: color, files: changed_files }
     end
   rescue
     default
@@ -917,6 +919,21 @@ class ClaudeStatusLine
     return text if text.length <= MIDDLE_TRUNCATE_THRESHOLD
 
     "#{text[0, MIDDLE_TRUNCATE_HEAD]}#{MIDDLE_TRUNCATE_MARKER}#{text[-MIDDLE_TRUNCATE_TAIL, MIDDLE_TRUNCATE_TAIL]}"
+  end
+
+  def changed_files
+    entries = `git status --porcelain -z 2>/dev/null`.split("\0")
+    files = []
+    until entries.empty?
+      entry = entries.shift
+      entries.shift if entry.match?(/^[RC]/)
+      files << "#{entry[0, 2].strip} #{middle_truncate(sanitize(entry[3..]))}"
+    end
+    return nil if files.empty?
+
+    shown = files.first(CHANGED_FILES_SHOWN)
+    shown << "+#{files.size - shown.size}" if files.size > shown.size
+    shown.join(" \u{00B7} ")
   end
 
   def build_git_indicators
