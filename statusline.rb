@@ -20,7 +20,7 @@
 # OAuth token resolution order (first non-empty wins), see fetch_oauth_token:
 #   1. $CLAUDE_CODE_OAUTH_TOKEN env var
 #   2. Token file: $CLAUDE_USAGE_TOKEN_FILE, default
-#      $HOME/.agents/keys/claude-oauth-token (set via `claude setup-token`)
+#      $HOME/.claude/keys/claude-oauth-token (set via `claude setup-token`)
 #   3. macOS keychain item "Claude Code-credentials" ->
 #      claudeAiOauth.accessToken (may not exist on newer Claude Code builds)
 # If none yield a token, the fetch is skipped and stale/default usage is shown.
@@ -55,7 +55,7 @@ class ClaudeStatusLine
   # actually deletes the file lives in usage-guard's stop-hook.sh.
   STANDDOWN_STALE_GRACE = 300
   KEYCHAIN_SERVICE = 'Claude Code-credentials'
-  DEFAULT_TOKEN_FILE = File.join(Dir.home, '.agents', 'keys', 'claude-oauth-token')
+  DEFAULT_TOKEN_FILE = File.join(Dir.home, '.claude', 'keys', 'claude-oauth-token')
   MIDDLE_TRUNCATE_THRESHOLD = 23
   MIDDLE_TRUNCATE_HEAD = 11
   MIDDLE_TRUNCATE_TAIL = 8

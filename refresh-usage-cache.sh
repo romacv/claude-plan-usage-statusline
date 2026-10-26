@@ -12,7 +12,7 @@
 # OAuth token resolution order (first non-empty wins):
 #   1. $CLAUDE_CODE_OAUTH_TOKEN env var
 #   2. Token file: $CLAUDE_USAGE_TOKEN_FILE, default
-#      $HOME/.agents/keys/claude-oauth-token (set via `claude setup-token`)
+#      $HOME/.claude/keys/claude-oauth-token (set via `claude setup-token`)
 #   3. macOS keychain item "Claude Code-credentials" ->
 #      claudeAiOauth.accessToken (may not exist on newer Claude Code builds)
 # If none yield a token, exit 0 without touching the cache (status: no_token).
@@ -49,7 +49,7 @@ touch "$LOCK_FILE"
 TOKEN="$CLAUDE_CODE_OAUTH_TOKEN"
 
 if [ -z "$TOKEN" ]; then
-  TOKEN_FILE="${CLAUDE_USAGE_TOKEN_FILE:-$HOME/.agents/keys/claude-oauth-token}"
+  TOKEN_FILE="${CLAUDE_USAGE_TOKEN_FILE:-$HOME/.claude/keys/claude-oauth-token}"
   if [ -r "$TOKEN_FILE" ]; then
     TOKEN=$(tr -d '[:space:]' < "$TOKEN_FILE" 2>/dev/null)
   fi
