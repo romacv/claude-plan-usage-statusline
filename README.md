@@ -26,12 +26,13 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 
 ## Layout
 
-Up to four lines, each dropped entirely when it has nothing to say:
+Up to five lines, each dropped entirely when it has nothing to say:
 
 1. pause badge (only while paused), model, effort, context, and 5h/1w usage (both dropped on a custom model)
 2. path, worktree, branch, changed files grouped by status mark, names without extensions: `??(notes, plan) M(app)`, first four, then `+N`
 3. goal, loops
 4. crons
+5. CPU, RAM with swap, and disk used/total, amber then red as they fill; `touch ~/.claude/statusline-resources.off` hides the line
 
 Every label on lines 3 and 4 is cut on whole words, never mid-word, and ends in `…` only when something was actually dropped.
 

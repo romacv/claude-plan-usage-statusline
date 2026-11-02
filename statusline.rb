@@ -61,6 +61,7 @@ class ClaudeStatusLine
   MIDDLE_TRUNCATE_TAIL = 8
   MIDDLE_TRUNCATE_MARKER = '....'
   CHANGED_FILES_SHOWN = 4
+  RESOURCES_OFF_FILE = File.join(Dir.home, '.claude', 'statusline-resources.off')
   CHANGED_FILE_NAME_LIMIT = 12
 
   COLORS = {
@@ -135,6 +136,8 @@ class ClaudeStatusLine
     lines << line3_parts.join(" #{sep} ") unless line3_parts.empty?
     crons = cron_segment
     lines << crons if crons
+    resources = resource_segment
+    lines << resources if resources
     lines.join("\n")
   end
 
@@ -871,6 +874,24 @@ class ClaudeStatusLine
     (Time.parse(entry['next']).to_i - wake).abs <= 600
   rescue StandardError
     false
+  end
+
+  def resource_segment
+    return nil if File.exist?(RESOURCES_OFF_FILE)
+
+    ncpu = `sysctl -n hw.ncpu`.to_i
+    cpu = [(`ps -A -o %cpu`.lines.drop(1).sum(&:to_f) / ncpu).round, 100].min
+    ram = 100 - `sysctl -n kern.memorystatus_level`.to_i
+    swap = `sysctl -n vm.swapusage`[/used = ([\d.]+)M/, 1].to_f
+    df = `df -k /System/Volumes/Data`.lines.last.split
+    disk = df[3].to_f * 1024 / 1e9
+    parts = []
+    parts << colorize("▣CPU:#{cpu}%", cpu > 90 ? :ctx_alert : (cpu > 70 ? :ctx_warn : :gray)) if ncpu.positive?
+    parts << colorize("▥RAM:#{ram}%#{" ⇄#{format('%.1f', swap * 1_048_576 / 1e9)}GB" if swap.positive?}", ram > 80 ? :ctx_alert : (ram > 65 ? :ctx_warn : :gray)) if ram < 100
+    parts << colorize("◉Disk:#{((df[1].to_f - df[3].to_f) * 1024 / 1e9).round}/#{(df[1].to_f * 1024 / 1e9).round}GB", disk < 20 ? :ctx_alert : (disk < 50 ? :ctx_warn : :gray)) if disk.positive?
+    parts.join(" #{@colors[:gray]}|#{@colors[:reset]} ") unless parts.empty?
+  rescue StandardError
+    nil
   end
 
   def cron_segment
