@@ -94,7 +94,7 @@ fi
 if ruby -rjson -e '
 resp = File.read(ARGV[0])
 data = (JSON.parse(resp) rescue nil)
-exit 1 if data.nil? || data["error"] || !data["five_hour"]
+exit 1 if data.nil? || data["error"] || !(data["five_hour"] || data["seven_day"])
 File.write(ARGV[1], resp)
 File.delete(ARGV[2]) if File.exist?(ARGV[2])
 ' "$BODY" "$CACHE_FILE" "$BACKOFF_FILE" 2>/dev/null; then

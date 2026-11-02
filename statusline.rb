@@ -118,7 +118,7 @@ class ClaudeStatusLine
       context_segment(usage[:context]),
       # The 5h/1w windows are the Claude plan's, so on a custom model they
       # say nothing about this session — drop both segments entirely.
-      (usage_segment(usage[:session], usage[:session_pct], usage[:reset_time], usage[:stale]) unless custom_model),
+      (usage_segment(usage[:session], usage[:session_pct], usage[:reset_time], usage[:stale]) unless custom_model || usage[:session].nil?),
       (usage_segment(usage[:weekly], usage[:weekly_pct], usage[:weekly_reset_time], usage[:stale]) unless custom_model)
     ].compact
     line1 = line1_parts.join(" #{sep} ")
@@ -1149,7 +1149,7 @@ class ClaudeStatusLine
 
     {
       context: "Ctx:#{@ctx_remaining.round}%",
-      session: "5h:#{session_remaining || '?'}%",
+      session: (session_remaining ? "5h:#{session_remaining}%" : nil),
       session_pct: session_remaining,
       reset_time: format_reset_time(usable_rate_window?(five_hour) ? epoch_to_iso(five_hour['resets_at']) : nil),
       weekly: "1w:#{weekly_remaining || '?'}%",
@@ -1200,12 +1200,13 @@ class ClaudeStatusLine
     resets_at_str = standard['resetsAt'] || standard['resets_at']
     weekly_resets_at_str = weekly['resetsAt'] || weekly['resets_at']
 
+    has_session = !standard.empty?
     session_remaining = [100 - session_util.round, 0].max
     weekly_remaining = [100 - weekly_util.round, 0].max
 
     {
       context: "Ctx:#{@ctx_remaining.round}%",
-      session: "5h:#{session_remaining}%",
+      session: (has_session || weekly.empty? ? "5h:#{session_remaining}%" : nil),
       session_pct: session_remaining,
       reset_time: format_reset_time(resets_at_str),
       weekly: "1w:#{weekly_remaining}%",
