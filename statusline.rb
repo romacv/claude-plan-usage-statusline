@@ -882,12 +882,13 @@ class ClaudeStatusLine
     ncpu = `sysctl -n hw.ncpu`.to_i
     cpu = [(`ps -A -o %cpu`.lines.drop(1).sum(&:to_f) / ncpu).round, 100].min
     ram = 100 - `sysctl -n kern.memorystatus_level`.to_i
+    mem = `sysctl -n hw.memsize`.to_f / 1_073_741_824
     swap = `sysctl -n vm.swapusage`[/used = ([\d.]+)M/, 1].to_f
     df = `df -k /System/Volumes/Data`.lines.last.split
     disk = df[3].to_f * 1024 / 1e9
     parts = []
     parts << colorize("▣CPU:#{cpu}%", cpu > 90 ? :ctx_alert : (cpu > 70 ? :ctx_warn : :gray)) if ncpu.positive?
-    parts << colorize("▥RAM:#{ram}%#{" ⇄#{format('%.1f', swap * 1_048_576 / 1e9)}GB" if swap.positive?}", ram > 80 ? :ctx_alert : (ram > 65 ? :ctx_warn : :gray)) if ram < 100
+    parts << colorize("▥RAM:#{(mem * ram / 100).round}/#{mem.round}GB#{" ⇄#{format('%.1f', swap * 1_048_576 / 1e9)}GB" if swap.positive?}", ram > 80 ? :ctx_alert : (ram > 65 ? :ctx_warn : :gray)) if ram < 100
     parts << colorize("◉Disk:#{((df[1].to_f - df[3].to_f) * 1024 / 1e9).round}/#{(df[1].to_f * 1024 / 1e9).round}GB", disk < 20 ? :ctx_alert : (disk < 50 ? :ctx_warn : :gray)) if disk.positive?
     parts.join(" #{@colors[:gray]}|#{@colors[:reset]} ") unless parts.empty?
   rescue StandardError
