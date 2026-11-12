@@ -119,7 +119,7 @@ Removes `statusline.rb`, `refresh-usage-cache.sh`, cache files, and the `statusL
 
 ## How It Works
 
-1. Reads `rate_limits` from Claude Code's stdin payload when present, and writes that reading through to the local cache; otherwise resolves an OAuth token (env var, token file, then macOS Keychain via `security find-generic-password`) and calls `https://api.anthropic.com/api/oauth/usage`
+1. Reads `rate_limits` from Claude Code's stdin payload when present, and writes that reading through to the local cache; otherwise resolves an OAuth token (env var, token file `$CLAUDE_USAGE_TOKEN_FILE` defaulting to `~/.agents/keys/claude-oauth-token`, then macOS Keychain via `security find-generic-password`) and calls `https://api.anthropic.com/api/oauth/usage`
 2. On the API path, caches the response locally; skips the call if the cache is fresh, and shows greyed stale data with a `~` prefix rather than discarding it once the cache outgrows the freshness window but is still under 6 hours old
 3. A shared Retry-After backoff, written on a 429 by either this script or `refresh-usage-cache.sh`, is honored before any API call
 4. Collects git state via `git status` / `git rev-parse` / `git rev-list`

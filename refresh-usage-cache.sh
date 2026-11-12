@@ -1,6 +1,6 @@
 #!/bin/bash
 # Refresh Claude usage cache in the background.
-# Called by Claude Code Stop hook (async: true).
+# Called by Claude Code Stop hook, which backgrounds it (nohup ... &).
 # Debounces to at most one API call per 900 seconds. Also honors a shared
 # Retry-After backoff (/tmp/claude_usage_backoff) written by any caller that
 # gets a 429, so this and statusline.rb never re-pin the rate-limit budget.
@@ -44,8 +44,6 @@ if [ -f "$LOCK_FILE" ]; then
   fi
 fi
 
-touch "$LOCK_FILE"
-
 TOKEN="$CLAUDE_CODE_OAUTH_TOKEN"
 
 if [ -z "$TOKEN" ]; then
@@ -66,6 +64,8 @@ if [ -z "$TOKEN" ]; then
   write_status "no_token"
   exit 0
 fi
+
+touch "$LOCK_FILE"
 
 HDR=$(mktemp)
 BODY=$(mktemp)
