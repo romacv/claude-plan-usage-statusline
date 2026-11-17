@@ -12,7 +12,7 @@
 # When stdin carries no `rate_limits` (older Claude Code builds, or the
 # script run standalone), usage falls back to Anthropic's OAuth API, cached
 # locally. A 429 response records a shared backoff (/tmp/claude_usage_backoff)
-# that this script and refresh-usage-cache.sh both honor, so neither re-pins
+# that this script honors, so it does not re-pin
 # the rate-limit budget. Data older than CACHE_TTL but within
 # STALE_DISPLAY_MAX is still shown, marked with a `~` prefix and gray color,
 # instead of being silently discarded.
