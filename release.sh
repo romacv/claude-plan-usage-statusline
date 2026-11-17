@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: release.sh vX.Y.Z -m "commit message" [--dry-run]
-# Syncs installed statusline.rb and refresh-usage-cache.sh into the repo, commits, pushes main, creates the GitHub release.
+# Syncs installed statusline.rb into the repo, commits, pushes main, creates the GitHub release.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -16,7 +16,7 @@ done
 [[ $ver =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must be vX.Y.Z" >&2; exit 2; }
 [ -n "$msg" ] || { echo "-m message required" >&2; exit 2; }
 
-files="statusline.rb refresh-usage-cache.sh"
+files="statusline.rb"
 src() { case $1 in statusline.rb) echo "$HOME/.claude/statusline.rb" ;; *) echo "$HOME/.claude/$1" ;; esac; }
 die() { echo "refused: $*" >&2; exit 1; }
 run() { echo "+ $*"; [ $dry -eq 1 ] || "$@"; }

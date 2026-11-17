@@ -8,8 +8,6 @@ SETTINGS_PATH="$CLAUDE_DIR/settings.json"
 mkdir -p "$CLAUDE_DIR"
 
 curl -fsSL "$BASE_URL/statusline.rb" -o "$CLAUDE_DIR/statusline.rb"
-curl -fsSL "$BASE_URL/refresh-usage-cache.sh" -o "$CLAUDE_DIR/refresh-usage-cache.sh"
-chmod +x "$CLAUDE_DIR/refresh-usage-cache.sh"
 
 ruby - <<'RUBY'
 require "json"
@@ -22,27 +20,6 @@ settings["statusLine"] = {
   "command" => "ruby ~/.claude/statusline.rb",
   "padding" => 0
 }
-
-settings["hooks"] ||= {}
-settings["hooks"]["Stop"] ||= []
-
-def has_command?(stop, needle)
-  stop.any? { |entry| (entry["hooks"] || []).any? { |h| h["command"].to_s.include?(needle) } }
-end
-
-already_installed = has_command?(settings["hooks"]["Stop"], "refresh-usage-cache.sh")
-
-unless already_installed
-  settings["hooks"]["Stop"] << {
-    "matcher" => "",
-    "hooks" => [
-      {
-        "type"    => "command",
-        "command" => "bash -c 'nohup bash $HOME/.claude/refresh-usage-cache.sh >/dev/null 2>&1 &'"
-      }
-    ]
-  }
-end
 
 File.write(settings_path, JSON.pretty_generate(settings))
 RUBY

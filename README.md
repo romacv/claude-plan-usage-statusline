@@ -115,16 +115,15 @@ Settings and configurations for AI agents are stored in the following paths. Sin
 curl -fsSL https://raw.githubusercontent.com/romacv/claude-plan-usage-statusline/main/uninstall.sh | sh
 ```
 
-Removes `statusline.rb`, `refresh-usage-cache.sh`, cache files, and the `statusLine` + `Stop` hook entries from `settings.json`.
+Removes `statusline.rb`, cache files, and the `statusLine` entry from `settings.json`.
 
 ## How It Works
 
 1. Reads `rate_limits` from Claude Code's stdin payload when present, and writes that reading through to the local cache; otherwise resolves an OAuth token (env var, token file `$CLAUDE_USAGE_TOKEN_FILE` defaulting to `~/.agents/keys/claude-oauth-token`, then macOS Keychain via `security find-generic-password`) and calls `https://api.anthropic.com/api/oauth/usage`
 2. On the API path, caches the response locally; skips the call if the cache is fresh, and shows greyed stale data with a `~` prefix rather than discarding it once the cache outgrows the freshness window but is still under 6 hours old
-3. A shared Retry-After backoff, written on a 429 by either this script or `refresh-usage-cache.sh`, is honored before any API call
+3. A shared Retry-After backoff, written on a 429 by this script, is honored before any API call
 4. Collects git state via `git status` / `git rev-parse` / `git rev-list`
 5. Outputs the status bar -- model, context, usage, reset timer, git info, goal, loops and crons
-6. A `Stop` hook runs `refresh-usage-cache.sh` asynchronously after each agent response, keeping the API-fallback cache fresh without blocking Claude Code. Debounced to at most one API call per 900 seconds.
 
 ## Menu Bar
 
