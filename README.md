@@ -22,7 +22,7 @@ Status line script for [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 - **Loop status** -- every loop pacing this session and what it works on, derived from its own transcript (see [Loop Status](#loop-status))
 - **Cron display** -- this session's other scheduled jobs, with next fire time and cadence (see [Cron Display](#cron-display))
 - **Git** -- branch, worktree (when in a git worktree), staged/modified counts, ahead/behind, and the changed files themselves
-- **Live refresh** -- the primary stdin reading writes through to the cache on every render; the API fallback is also refreshed automatically after each agent response via Claude Code `Stop` hook, with 900-second debounce
+- **Live refresh** -- the primary stdin reading writes through to the cache on every render; sessions that draw no status line (the desktop app) leave it stale, so `ruby ~/.claude/statusline.rb --refresh-cache [path]` runs the API fallback alone and prints `ok`, `no_token`, `backoff`, `http_<code>` or `bad_payload` (usage-guard calls it when its cache is stale)
 
 ## Layout
 
@@ -121,7 +121,7 @@ Removes `statusline.rb`, cache files, and the `statusLine` entry from `settings.
 
 1. Reads `rate_limits` from Claude Code's stdin payload when present, and writes that reading through to the local cache; otherwise resolves an OAuth token (env var, token file `$CLAUDE_USAGE_TOKEN_FILE` defaulting to `~/.agents/keys/claude-oauth-token`, then macOS Keychain via `security find-generic-password`) and calls `https://api.anthropic.com/api/oauth/usage`
 2. On the API path, caches the response locally; skips the call if the cache is fresh, and shows greyed stale data with a `~` prefix rather than discarding it once the cache outgrows the freshness window but is still under 6 hours old
-3. A shared Retry-After backoff, written on a 429 by this script, is honored before any API call
+3. A shared Retry-After backoff, written on a 429 by this script, is honored before any API call, `--refresh-cache` included
 4. Collects git state via `git status` / `git rev-parse` / `git rev-list`
 5. Outputs the status bar -- model, context, usage, reset timer, git info, goal, loops and crons
 

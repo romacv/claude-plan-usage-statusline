@@ -141,6 +141,28 @@ class ClaudeStatusLine
     lines.join("\n")
   end
 
+  def refresh_cache(path = CACHE_FILE)
+    return 'backoff' if backoff_active?
+
+    token = fetch_oauth_token
+    return 'no_token' unless token
+
+    data = fetch_api_usage(token)
+    return(@api_status.to_s.match?(/\A\d+\z/) ? "http_#{@api_status}" : @api_status.to_s) if data.nil?
+
+    if data['rate_limited']
+      record_backoff(data['retry_after'])
+      return 'http_429'
+    end
+    return 'bad_payload' unless data['five_hour'].is_a?(Hash) || data['seven_day'].is_a?(Hash)
+
+    write_cache_atomic(data, path)
+    clear_backoff
+    'ok'
+  rescue StandardError
+    'error'
+  end
+
   private
 
   def colorize(text, color)
@@ -1041,10 +1063,13 @@ class ClaudeStatusLine
 
     response = http.request(request)
     return { 'rate_limited' => true, 'retry_after' => response['retry-after'].to_i } if response.code == '429'
+
+    @api_status = response.code
     return nil unless response.is_a?(Net::HTTPSuccess)
 
     JSON.parse(response.body)
   rescue StandardError
+    @api_status = response.is_a?(Net::HTTPSuccess) ? 'bad_payload' : 'error'
     nil
   end
 
@@ -1090,11 +1115,11 @@ class ClaudeStatusLine
 
   # Atomic write: temp file in the same directory + File.rename, so a
   # concurrently-rendering session never observes a torn/partial cache file.
-  def write_cache_atomic(data)
-    dir = File.dirname(CACHE_FILE)
-    tmp = File.join(dir, ".#{File.basename(CACHE_FILE)}.#{Process.pid}.#{rand(1_000_000)}.tmp")
+  def write_cache_atomic(data, path = CACHE_FILE)
+    dir = File.dirname(path)
+    tmp = File.join(dir, ".#{File.basename(path)}.#{Process.pid}.#{rand(1_000_000)}.tmp")
     File.write(tmp, JSON.generate(data))
-    File.rename(tmp, CACHE_FILE)
+    File.rename(tmp, path)
   rescue StandardError
     nil
   end
@@ -1271,4 +1296,8 @@ class ClaudeStatusLine
 end
 
 # Execute
-puts ClaudeStatusLine.new.generate
+if ARGV[0] == '--refresh-cache'
+  puts ClaudeStatusLine.allocate.refresh_cache(ARGV[1] || ClaudeStatusLine::CACHE_FILE)
+else
+  puts ClaudeStatusLine.new.generate
+end
