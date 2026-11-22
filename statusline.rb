@@ -20,9 +20,10 @@
 # OAuth token resolution order (first non-empty wins), see fetch_oauth_token:
 #   1. $CLAUDE_CODE_OAUTH_TOKEN env var
 #   2. Token file: $CLAUDE_USAGE_TOKEN_FILE, default
-#      $HOME/.agents/keys/claude-oauth-token (set via `claude setup-token`)
-#   3. macOS keychain item "Claude Code-credentials" ->
-#      claudeAiOauth.accessToken (may not exist on newer Claude Code builds)
+#      $HOME/.agents/keys/claude-oauth-token (a `claude setup-token` token
+#      lacks the user:profile scope the usage API requires and gets HTTP 403)
+#   3. macOS keychain item "Claude Code-credentials" for account $USER, then
+#      any account -> the first one holding claudeAiOauth.accessToken
 # If none yield a token, the fetch is skipped and stale/default usage is shown.
 #
 # Usage:
@@ -1004,12 +1005,23 @@ class ClaudeStatusLine
     parts.empty? ? '' : ' ' + parts.join(' ')
   end
 
+  # Several items can share the service name (a stale one under account
+  # "unknown" holds only mcpOAuth); a lookup without -a returns the first.
   def read_keychain
     return @keychain_data if defined?(@keychain_data)
-    json_str = `security find-generic-password -s "#{KEYCHAIN_SERVICE}" -w 2>/dev/null`.strip
-    @keychain_data = json_str.empty? ? {} : JSON.parse(json_str)
+    user = ENV['USER'].to_s
+    entries = []
+    entries << keychain_entry(['-a', user]) unless user.empty?
+    entries << keychain_entry([])
+    @keychain_data = entries.find { |entry| entry.key?('claudeAiOauth') } || {}
+  end
+
+  def keychain_entry(account_args)
+    command = ['security', 'find-generic-password', '-s', KEYCHAIN_SERVICE, *account_args, '-w']
+    json_str = IO.popen(command, err: File::NULL, &:read).to_s.strip
+    json_str.empty? ? {} : JSON.parse(json_str)
   rescue StandardError
-    @keychain_data = {}
+    {}
   end
 
   # Resolution order: env var -> token file -> keychain. Each source is
