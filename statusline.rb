@@ -11,9 +11,9 @@
 #
 # When stdin carries no `rate_limits` (older Claude Code builds, or the
 # script run standalone), usage falls back to Anthropic's OAuth API, cached
-# locally. A 429 response records a shared backoff (/tmp/claude_usage_backoff)
-# that this script honors, so it does not re-pin
-# the rate-limit budget. Data older than CACHE_TTL but within
+# locally. A 429 response records a shared backoff (/tmp/claude_usage_backoff,
+# its Retry-After, or 300 s without one) that this script honors, so it does
+# not re-pin the rate-limit budget. Data older than CACHE_TTL but within
 # STALE_DISPLAY_MAX is still shown, marked with a `~` prefix and gray color,
 # instead of being silently discarded.
 #
@@ -1086,7 +1086,7 @@ class ClaudeStatusLine
   end
 
   def record_backoff(retry_after)
-    seconds = retry_after.to_i > 0 ? retry_after.to_i : 3600
+    seconds = retry_after.to_i > 0 ? retry_after.to_i : 300
     File.write(BACKOFF_FILE, (Time.now.to_i + seconds).to_s)
   rescue StandardError
     nil
